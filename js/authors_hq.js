@@ -67,6 +67,8 @@ function renderAuthors() {
       <button class="btn primary" onclick="openAddAuthorModal()"><i class="ti ti-user-plus"></i> Add author</button>
     </div>`;
 
+  html += storyCard();
+
   // Q&A section
   if (qnaConfirmed.length || qnaAsked.length) {
     html += `<div style="font-size:11px;font-weight:600;color:var(--purple);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Q&amp;A Panel</div>`;
@@ -99,6 +101,7 @@ function renderAuthors() {
   }
 
   el.innerHTML = html;
+  syncStoryFromFirebase();
 }
 
 function authorCard(a) {
@@ -367,4 +370,164 @@ async function createPrizeForAuthor(author, type) {
     });
     showToast('Prize created for ' + author.name);
   } catch(e) { showToast('Could not create prize','error'); }
+}
+
+// ── Multi-author story ────────────────────────────────────────────────────────
+// The author-facing story page lives in its own repo and saves to /story in the
+// same Firebase database. HQ reads it here: anyone who has written a part gets
+// "Multi-author story" checked off automatically.
+
+window.STORY_APP_URL = localStorage.getItem('soiree_story_url') || 'https://authornjk.github.io/Soiree-Story';
+
+let _story = null;        // last /story snapshot from Firebase
+let _storyFetchedAt = 0;
+let _storyLoading = false;
+
+function storyParts() {
+  const p = _story && _story.parts;
+  if (!p) return [];
+  return (Array.isArray(p) ? p : Object.values(p)).filter(Boolean).sort((a,b) => a.seq - b.seq);
+}
+
+function storyIsClosed() { return !!(_story && _story.latest && _story.latest.closed); }
+
+function joinStoryPart(p) {
+  const body = p.body || '', tail = p.tail || '';
+  return tail ? body + ' ' + tail : body;
+}
+
+function syncStoryFromFirebase(force) {
+  if (!window.FIREBASE_DB_URL || _storyLoading) return;
+  if (!force && Date.now() - _storyFetchedAt < 15000) return;
+  _storyLoading = true;
+  let dirty = false;
+  fetch(window.FIREBASE_DB_URL + '/story.json', {cache:'no-store'})
+    .then(r => r.json())
+    .then(data => {
+      const before = JSON.stringify(_story);
+      _story = data || {};
+      dirty = JSON.stringify(_story) !== before;
+      const doneIds = new Set(storyParts().map(p => p.authorId));
+      let changed = false;
+      (S.authors||[]).forEach(a => {
+        if (doneIds.has(a.id) && !a.multiAuthor) { a.multiAuthor = true; changed = true; }
+      });
+      if (changed) saveState();
+    })
+    .catch(() => {})
+    .finally(() => {
+      _storyLoading = false;
+      _storyFetchedAt = Date.now();
+      if (dirty) renderAuthors();   // only redraw when something actually changed
+    });
+}
+
+function storyCard() {
+  const parts   = storyParts();
+  const closed  = storyIsClosed();
+  const doneIds = new Set(parts.map(p => p.authorId));
+  const pool    = byLastName((S.authors||[]).filter(a => a.status==='Confirmed'));
+  const todo    = pool.filter(a => !doneIds.has(a.id));
+  const total   = pool.filter(a => doneIds.has(a.id)).length + todo.length;
+  const waiting = _story && _story.waiting && !doneIds.has(_story.waiting.id) ? _story.waiting : null;
+  const lastPart = parts[parts.length-1];
+
+  let status;
+  if (_story === null)      status = 'Loading…';
+  else if (closed)          status = 'Finished — ' + parts.length + ' parts';
+  else if (!parts.length)   status = 'Not started';
+  else                      status = parts.length + ' of ' + total + ' written';
+
+  let body = '';
+  if (_story !== null && !closed) {
+    if (waiting) {
+      const when = new Date(waiting.ts).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      body += `<div style="font-size:12px;background:var(--amber-bg);color:var(--amber-text);border-radius:var(--radius-sm);padding:6px 9px;margin-bottom:8px">
+        <i class="ti ti-hourglass"></i> Waiting on <strong>${escHtml(waiting.name)}</strong>${waiting.finale?' (final author)':''} — link copied ${escHtml(when)}</div>`;
+    } else if (lastPart) {
+      body += `<div style="font-size:12px;color:var(--text2);margin-bottom:8px"><i class="ti ti-check" style="color:var(--green)"></i> ${escHtml(lastPart.name)} finished. Ready for the next author.</div>`;
+    }
+    if (todo.length) {
+      body += `<div style="font-size:10px;color:var(--text3);margin-bottom:2px">${parts.length ? 'Next author' : 'First author'}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <select id="story-next" style="flex:1;min-width:150px;font-size:12px;padding:5px 6px">
+            ${todo.map(a => `<option value="${a.id}"${waiting && waiting.id===a.id?' selected':''}>${escHtml(a.name)}</option>`).join('')}
+          </select>
+          <button class="btn primary" style="font-size:12px" onclick="copyStoryLink()"><i class="ti ti-link"></i> Copy their link</button>
+        </div>
+        ${parts.length ? `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-top:7px">
+          <input type="checkbox" id="story-finale" style="accent-color:var(--purple)"${todo.length===1?' checked':''}>
+          This is the final author (they write the ending)
+        </label>` : `<div style="font-size:11px;color:var(--text2);margin-top:6px">Whoever goes first automatically gets the “start the story” version.</div>`}`;
+    } else {
+      body += `<div style="font-size:12px;color:var(--text2)">Every confirmed author has written a part.</div>`;
+    }
+  }
+
+  return `<div class="card" style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <div style="font-size:13px;font-weight:600"><i class="ti ti-book-2"></i> Multi-author story
+        <span style="font-weight:400;color:${closed?'var(--green)':'var(--text2)'}">· ${escHtml(status)}</span></div>
+      <div style="display:flex;gap:5px">
+        <button class="btn" style="font-size:11px" onclick="syncStoryFromFirebase(true)" title="Refresh"><i class="ti ti-refresh"></i></button>
+        ${parts.length ? `<button class="btn" style="font-size:11px" onclick="openStoryModal()"><i class="ti ti-eye"></i> Read story</button>` : ''}
+      </div>
+    </div>
+    ${body}
+  </div>`;
+}
+
+function copyText(text, okMsg) {
+  const done = () => showToast(okMsg);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => prompt('Copy this:', text));
+  } else {
+    prompt('Copy this:', text);
+  }
+}
+
+function copyStoryLink() {
+  const id = document.getElementById('story-next')?.value;
+  const a  = (S.authors||[]).find(x => x.id===id);
+  if (!a) return;
+  const finale = !!document.getElementById('story-finale')?.checked;
+  const url = window.STORY_APP_URL.replace(/\/+$/,'') + '/?a=' + encodeURIComponent(a.id) + (finale ? '&finale=1' : '');
+  copyText(url, 'Link for ' + a.name + ' copied');
+  // Remember who it went to, so HQ can show who the story is waiting on.
+  const waiting = {id:a.id, name:a.name, finale, ts:Date.now()};
+  if (_story) _story.waiting = waiting;
+  if (window.FIREBASE_DB_URL) fetch(window.FIREBASE_DB_URL + '/story/waiting.json', {
+    method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(waiting)
+  }).catch(()=>{});
+  renderAuthors();
+}
+
+function openStoryModal() {
+  const parts = storyParts();
+  showModal(`
+    <h3>Multi-author story ${storyIsClosed() ? '(finished)' : '(so far)'}</h3>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Names show here for you only. “Copy story” copies the text with no names.</div>
+    <div style="max-height:55vh;overflow-y:auto;margin-bottom:12px">
+      ${parts.map(p => `<div style="margin-bottom:12px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:2px">${p.seq}. ${escHtml(p.name)}</div>
+        <div style="font-family:Georgia,serif;font-size:14px;line-height:1.55;white-space:pre-wrap">${escHtml(p.body)}${p.tail ? ` <span style="background:var(--amber-bg);color:var(--amber-text)">${escHtml(p.tail)}</span>` : ''}</div>
+      </div>`).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Highlighted = the 150 characters passed to the next author.</div>
+    <div class="m-actions">
+      <button class="btn danger" style="font-size:11px" onclick="clearStory()"><i class="ti ti-trash"></i> Start over</button>
+      <button class="btn primary" onclick="copyText(storyParts().map(joinStoryPart).join('\\n\\n'),'Story copied')"><i class="ti ti-copy"></i> Copy story</button>
+    </div>`);
+}
+
+function clearStory() {
+  if (!confirm('Delete EVERY part of the multi-author story and uncheck it for all authors? This cannot be undone.')) return;
+  fetch(window.FIREBASE_DB_URL + '/story.json', {method:'DELETE'})
+    .then(r => { if (!r.ok) throw new Error(); })
+    .then(() => {
+      _story = {};
+      (S.authors||[]).forEach(a => { a.multiAuthor = false; });
+      saveState(); closeModal(); renderAuthors(); showToast('Story cleared');
+    })
+    .catch(() => showToast('Could not clear the story', 'error'));
 }

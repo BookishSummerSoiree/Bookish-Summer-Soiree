@@ -150,11 +150,24 @@ function migrateState() {
   S.todos = S.todos.map(t => ({notes:'',...t}));
 }
 
+// ── Cloud safety ──────────────────────────────────────────────────────────────
+// HQ keeps a full copy of everything at /hq/state in Firebase, stamped with the
+// time it was saved. A browser never pushes anything up until it has first
+// checked that copy, and it adopts the cloud copy whenever that one is newer.
+// A brand-new browser (new device, new web address) therefore loads your real
+// data instead of overwriting it with the starter template.
+let _hadLocal   = false;   // did this browser already hold HQ data at startup?
+let _cloudReady = false;   // have we compared against the cloud copy yet?
+let _cloudBusy  = false;
+const SK_PREV = SK + '_previous';   // safety copy of whatever was replaced
+
 function loadState() {
   try {
     const raw = localStorage.getItem(SK);
+    _hadLocal = !!raw;
     S = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(DEFAULT_DATA));
   } catch(e) {
+    _hadLocal = false;
     S = JSON.parse(JSON.stringify(DEFAULT_DATA));
   }
   // Always sync admin count from people groups
@@ -172,12 +185,47 @@ function saveState() {
       if (e.unitLabelType === 'authors') e.qty = S.attendance.authors;
     }
   });
+  S._savedAt = Date.now();
+  _hadLocal = true;
   try { localStorage.setItem(SK, JSON.stringify(S)); } catch(e) {}
-  syncHQToFirebase();
+  if (_cloudReady) syncHQToFirebase();
+  else loadFromCloud();   // still unchecked (e.g. was offline) — compare first, then push
+}
+
+function adoptState(data, keepPrevious) {
+  if (keepPrevious) { try { const old = localStorage.getItem(SK); if (old) localStorage.setItem(SK_PREV, old); } catch(e) {} }
+  S = data;
+  migrateState();
+  _hadLocal = true;
+  try { localStorage.setItem(SK, JSON.stringify(S)); } catch(e) {}
+}
+
+function loadFromCloud() {
+  if (!window.FIREBASE_DB_URL || _cloudBusy) return Promise.resolve();
+  _cloudBusy = true;
+  return fetch(window.FIREBASE_DB_URL + '/hq/state.json', {cache:'no-store'})
+    .then(r => { if (!r.ok) throw new Error('read failed'); return r.json(); })
+    .then(remote => {
+      const remoteAt = (remote && remote._savedAt) || 0;
+      const localAt  = (_hadLocal && S._savedAt) || 0;
+      if (remote && Array.isArray(remote.authors) && (!_hadLocal || remoteAt > localAt)) {
+        adoptState(remote, _hadLocal);
+        _cloudReady = true;
+        if (typeof showTab === 'function' && document.getElementById('root').innerHTML) showTab(_activeTab);
+        showToast('Loaded your latest HQ data');
+        return;
+      }
+      _cloudReady = true;
+      // Only push when this browser holds real data. A fresh browser showing the
+      // starter template stays quiet until you actually change something.
+      if (_hadLocal) syncHQToFirebase();
+    })
+    .catch(() => {})
+    .finally(() => { _cloudBusy = false; });
 }
 
 function syncHQToFirebase() {
-  if (!window.FIREBASE_DB_URL) return;
+  if (!window.FIREBASE_DB_URL || !_cloudReady) return;
   const push = (path, data) => fetch(window.FIREBASE_DB_URL + path + '.json', {
     method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)
   }).catch(()=>{});
@@ -190,6 +238,35 @@ function syncHQToFirebase() {
   (S.authors||[]).forEach(a => { authObj[a.id] = a; });
   push('/authors', authObj);
   push('/wishlist', S.wishlist||[]);
+  push('/hq/state', S);
+}
+
+// ── Backup file: export / import ──────────────────────────────────────────────
+function exportBackupFile() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(S)], {type:'application/json'}));
+  a.download = 'soiree-hq-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+}
+
+function importBackupFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); } catch(e) { showToast('That file is not an HQ backup', 'error'); return; }
+    if (!data || !Array.isArray(data.authors) || !Array.isArray(data.todos)) { showToast('That file is not an HQ backup', 'error'); return; }
+    if (!confirm('Replace EVERYTHING in HQ with this backup?\n\n' + data.authors.length + ' authors, ' + (data.wishlist||[]).length +
+      ' wishlist names, ' + data.todos.length + ' to-dos.\n\nThis also becomes the copy every other device loads.')) return;
+    adoptState(data, true);
+    S._savedAt = Date.now();
+    try { localStorage.setItem(SK, JSON.stringify(S)); } catch(e) {}
+    _cloudReady = true;
+    syncHQToFirebase();
+    showTab(_activeTab);
+    showToast('Backup loaded — ' + S.authors.length + ' authors');
+  };
+  reader.readAsText(file);
 }
 
 // ── Helpers ──

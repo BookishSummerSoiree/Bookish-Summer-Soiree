@@ -140,6 +140,17 @@ function renderSettings() {
       </div>
     </div>
 
+    <!-- BACKUP FILE -->
+    <div class="card">
+      <div class="card-title">Backup file</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:8px">A backup file holds everything in HQ: authors, wishlist, budget, to-dos, inventory and people.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" onclick="exportBackupFile()"><i class="ti ti-download"></i> Download backup file</button>
+        <button class="btn" onclick="document.getElementById('s-import').click()"><i class="ti ti-upload"></i> Load a backup file</button>
+        <input type="file" id="s-import" accept=".json,application/json" style="display:none" onchange="importBackupFile(this.files[0]);this.value=''">
+      </div>
+    </div>
+
     <!-- APP CONNECTIONS (at bottom) -->
     <div class="card">
       <div class="card-title">App connections</div>
@@ -338,7 +349,9 @@ function boot() {
   loadState();
   renderShell();
   showTab('finances');
-  if (window.FIREBASE_DB_URL) setTimeout(syncHQToFirebase, 1000);
+  // Compare with the cloud copy BEFORE anything is pushed (see storage.js).
+  loadFromCloud();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadFromCloud(); });
 }
 
 boot();
