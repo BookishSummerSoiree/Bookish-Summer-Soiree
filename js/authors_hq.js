@@ -1,15 +1,32 @@
 // authors_hq.js — clean rewrite
 
+// Stored yes/no flags on each author. The author card shows five things:
+// To-Do list (from the Author Info app), Ticket purchased, Multi-author story,
+// Books sent and SWAG sent.
 const AUTHOR_CHECKS = [
-  {key:'infoForm',         label:'Info form filled'},
-  {key:'multiAuthor',      label:'Multi-author story'},
-  {key:'swagSent',         label:'SWAG sent'},
-  {key:'booksDonated',     label:'Books donated'},
-  {key:'ticket',           label:'Ticket purchased'},
-  {key:'qrCode',           label:'QR code received'},
-  {key:'signingConfirmed', label:'Signing confirmed'},
-  {key:'thankYou',         label:'Thank you sent'},
+  {key:'ticket',       label:'Ticket purchased'},
+  {key:'multiAuthor',  label:'Multi-author story'},
+  {key:'booksDonated', label:'Books sent'},
+  {key:'swagSent',     label:'SWAG sent'},
 ];
+
+// Progress reported by the Author Info app, keyed by the author's name slug.
+let _progress = {};
+function authorSlug(name) { return String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,'-'); }
+function authorProgress(a) { return _progress[authorSlug(a.name)] || null; }
+
+// What counts toward the "3/5" on the collapsed card.
+function authorTally(a) {
+  const p = authorProgress(a);
+  const items = [
+    !!(p && p.total > 0 && p.done >= p.total),   // to-do list finished
+    !!a.ticket,
+    !!a.multiAuthor,
+  ];
+  if (!(p && p.prizes === 'no')) items.push(!!a.booksDonated);
+  if (!(p && p.swag   === 'no')) items.push(!!a.swagSent);
+  return {done: items.filter(Boolean).length, total: items.length};
+}
 
 const QNA_GOAL    = 6;
 const TOTAL_GOAL  = 18;
@@ -106,7 +123,7 @@ function renderAuthors() {
 
 function authorCard(a) {
   const idx = (S.authors||[]).findIndex(x => x.id===a.id);
-  const done = AUTHOR_CHECKS.filter(c => a[c.key]).length;
+  const tally = authorTally(a);
   const ini  = (a.name||'?').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
   const isQA = a.role==='Q&A' || a.role==='Both';
 
@@ -119,7 +136,7 @@ function authorCard(a) {
         <div style="font-size:11px;color:var(--text2)">${escHtml(a.role)} · ${escHtml(a.status)}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-        <span style="font-size:11px;color:${done===AUTHOR_CHECKS.length?'var(--green)':'var(--text2)'}">${done}/${AUTHOR_CHECKS.length}</span>
+        <span style="font-size:11px;color:${tally.done===tally.total?'var(--green)':'var(--text2)'}">${tally.done}/${tally.total}</span>
         <i class="ti ti-chevron-${a._expanded?'up':'down'}" style="font-size:12px;color:var(--text3)"></i>
       </div>
     </div>
@@ -129,7 +146,32 @@ function authorCard(a) {
 
 function authorDetail(a, idx) {
   const isQA = a.role==='Q&A'||a.role==='Both';
+  const p = authorProgress(a);
+  const noPrizes = !!(p && p.prizes === 'no');
+  const noSwag   = !!(p && p.swag   === 'no');
+  const todoDone = !!(p && p.total > 0 && p.done >= p.total);
+  const row = 'display:flex;align-items:center;gap:6px;font-size:12px;min-height:22px';
+  const box = (key, label, opts={}) => `<label style="${row};cursor:${opts.off?'default':'pointer'};${opts.off?'color:var(--text3)':''}">
+      <input type="checkbox" ${a[key]&&!opts.off?'checked':''} ${opts.off?'disabled':''} style="accent-color:var(--purple)"
+        onchange="toggleAuthorCheck('${a.id}','${key}',this.checked)">
+      <span>${escHtml(label)}${opts.note?` <span style="font-size:10px;color:var(--text3)">${escHtml(opts.note)}</span>`:''}</span>
+    </label>`;
   return `<div style="padding:10px 12px;border-top:.5px solid var(--border);background:var(--bg2)">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-bottom:10px">
+      <div>
+        <div style="${row}">
+          <i class="ti ti-${todoDone?'circle-check':'list-check'}" style="font-size:14px;color:${todoDone?'var(--green)':'var(--text3)'}"></i>
+          <span>To-Do list: <strong style="color:${todoDone?'var(--green)':'var(--text)'}">${p ? p.done+'/'+p.total : '—'}</strong>${p ? '' : ' <span style="font-size:10px;color:var(--text3)">not started</span>'}</span>
+        </div>
+        ${box('ticket','Ticket purchased')}
+        ${box('multiAuthor','Multi-author story',{note:'auto'})}
+      </div>
+      <div>
+        <div style="${row};font-weight:600;color:var(--text2)">Donations</div>
+        ${box('booksDonated','Books sent', noPrizes ? {off:true,note:'not donating'} : {})}
+        ${box('swagSent','SWAG sent', noSwag ? {off:true,note:'not sending'} : {})}
+      </div>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <div>
         <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Status</div>
@@ -140,21 +182,9 @@ function authorDetail(a, idx) {
       <div>
         <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Role</div>
         <select style="width:100%;font-size:12px;padding:4px 6px" onchange="setAuthorField('${a.id}','role',this.value)">
-          ${['Book Signing','Q&A','Both'].map(r=>`<option${a.role===r?' selected':''}>${r}</option>`).join('')}
+          ${['Book Signing','Q&A'].map(r=>`<option${(isQA?'Q&A':'Book Signing')===r?' selected':''}>${r}</option>`).join('')}
         </select>
       </div>
-      <div style="grid-column:1/-1">
-        <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Website</div>
-        <input type="text" value="${escHtml(a.website||'')}" placeholder="https://…" style="width:100%;font-size:12px;padding:4px 6px"
-          onblur="setAuthorField('${a.id}','website',this.value)">
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:10px">
-      ${AUTHOR_CHECKS.map(c=>`<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
-        <input type="checkbox" ${a[c.key]?'checked':''} style="accent-color:var(--purple)"
-          onchange="toggleAuthorCheck('${a.id}','${c.key}',this.checked)">
-        ${escHtml(c.label)}
-      </label>`).join('')}
     </div>
     <textarea style="width:100%;font-size:12px;padding:4px 7px;border:.5px solid var(--border2);border-radius:var(--radius-sm);min-height:40px;background:var(--bg);color:var(--text);font-family:inherit"
       placeholder="Notes…" onblur="setAuthorField('${a.id}','notes',this.value)">${escHtml(a.notes||'')}</textarea>
@@ -298,7 +328,7 @@ function openAddAuthorModal() {
     <div class="field"><label>Name</label><input type="text" id="aa-name" placeholder="Full name"></div>
     <div class="field"><label>Role</label>
       <select id="aa-role">
-        <option>Book Signing</option><option>Q&A</option><option>Both</option>
+        <option>Book Signing</option><option>Q&A</option>
       </select>
     </div>
     <div class="field"><label>Status</label>
@@ -306,7 +336,6 @@ function openAddAuthorModal() {
         <option>Confirmed</option><option>Asked</option><option>Maybe</option>
       </select>
     </div>
-    <div class="field"><label>Website (optional)</label><input type="text" id="aa-web" placeholder="https://…"></div>
     <div class="field"><label>Notes (optional)</label><input type="text" id="aa-notes"></div>
     <div class="m-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -401,12 +430,13 @@ function syncStoryFromFirebase(force) {
   if (!force && Date.now() - _storyFetchedAt < 15000) return;
   _storyLoading = true;
   let dirty = false;
-  fetch(window.FIREBASE_DB_URL + '/story.json', {cache:'no-store'})
-    .then(r => r.json())
-    .then(data => {
-      const before = JSON.stringify(_story);
+  const grab = path => fetch(window.FIREBASE_DB_URL + path, {cache:'no-store'}).then(r => r.json());
+  Promise.all([grab('/story.json'), grab('/authorProgress.json').catch(() => null)])
+    .then(([data, progress]) => {
+      const before = JSON.stringify([_story, _progress]);
       _story = data || {};
-      dirty = JSON.stringify(_story) !== before;
+      if (progress && typeof progress === 'object') _progress = progress;
+      dirty = JSON.stringify([_story, _progress]) !== before;
       const doneIds = new Set(storyParts().map(p => p.authorId));
       let changed = false;
       (S.authors||[]).forEach(a => {
@@ -418,7 +448,10 @@ function syncStoryFromFirebase(force) {
     .finally(() => {
       _storyLoading = false;
       _storyFetchedAt = Date.now();
-      if (dirty) renderAuthors();   // only redraw when something actually changed
+      // Only redraw when something changed, and never while you're typing a note.
+      const el = document.activeElement;
+      const typing = el && /^(TEXTAREA|INPUT|SELECT)$/.test(el.tagName) && el.closest('#authors-content');
+      if (dirty && !typing) renderAuthors();
     });
 }
 
@@ -531,3 +564,9 @@ function clearStory() {
     })
     .catch(() => showToast('Could not clear the story', 'error'));
 }
+
+// Keep the Authors tab fresh while it's open: story progress and each author's
+// To-Do count are re-read every 20 seconds.
+setInterval(() => {
+  if (typeof _activeTab !== 'undefined' && _activeTab === 'authors-hq' && !document.hidden) syncStoryFromFirebase(true);
+}, 20000);
