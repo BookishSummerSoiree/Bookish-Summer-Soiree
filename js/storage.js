@@ -10,7 +10,7 @@ if (localStorage.getItem('soiree_firebase_url') === _oldFbUrl || !localStorage.g
   localStorage.setItem('soiree_firebase_url', _newFbUrl);
 }
 window.FIREBASE_DB_URL = localStorage.getItem('soiree_firebase_url') || _newFbUrl;
-window.PRIZE_APP_URL   = localStorage.getItem('soiree_prize_url')    || 'https://authornjk.github.io/BSS-Prizes';
+window.PRIZE_APP_URL   = localStorage.getItem('soiree_prize_url')    || 'https://bookishsummersoiree.github.io/BSS-Prizes';
 
 function getAdminCount() {
   return (S.peopleGroups?.['Admin'] || []).length || 4;

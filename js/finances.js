@@ -94,11 +94,11 @@ function renderFinances() {
     <div class="att-row">
       <div class="att-cell">
         <div class="att-lbl">Total attendees</div>
-        ${numIn('att-total', total, 'blurAtt("total",this.value)', 'width:100%;font-size:18px;font-weight:700;text-align:center')}
+        ${numIn('att-total', total, 'blurAtt(\'total\',this.value)', 'width:100%;font-size:18px;font-weight:700;text-align:center')}
       </div>
       <div class="att-cell">
         <div class="att-lbl">Authors (free)</div>
-        ${numIn('att-authors', authors, 'blurAtt("authors",this.value)', 'width:100%;font-size:18px;font-weight:700;text-align:center')}
+        ${numIn('att-authors', authors, 'blurAtt(\'authors\',this.value)', 'width:100%;font-size:18px;font-weight:700;text-align:center')}
       </div>
       <div class="att-cell">
         <div class="att-lbl">Admin (free) <span style="font-size:9px;color:var(--text3)">(from Settings)</span></div>

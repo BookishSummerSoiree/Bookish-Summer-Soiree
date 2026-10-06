@@ -377,7 +377,7 @@ async function createPrizeForAuthor(author, type) {
 // same Firebase database. HQ reads it here: anyone who has written a part gets
 // "Multi-author story" checked off automatically.
 
-window.STORY_APP_URL = localStorage.getItem('soiree_story_url') || 'https://authornjk.github.io/Soiree-Story';
+window.STORY_APP_URL = localStorage.getItem('soiree_story_url') || 'https://bookishsummersoiree.github.io/Soiree-Story';
 
 let _story = null;        // last /story snapshot from Firebase
 let _storyFetchedAt = 0;
