@@ -15,6 +15,7 @@ function renderShell() {
       <div id="tab-todo"        style="display:none"></div>
       <div id="tab-inventory"   style="display:none"></div>
       <div id="tab-authors-hq"  style="display:none"><div id="authors-content"></div></div>
+      <div id="tab-presales"    style="display:none"><div id="presales-content"></div></div>
       <div id="tab-prizes"      style="display:none"><div id="prizes-content"></div></div>
       <div id="tab-settings"    style="display:none"><div id="settings-content"></div></div>
       <div style="height:300px;flex-shrink:0" aria-hidden="true"></div>
@@ -24,6 +25,7 @@ function renderShell() {
       <button class="tab-btn" onclick="showTab('todo')"><i class="ti ti-check"></i>To-do</button>
       <button class="tab-btn" onclick="showTab('inventory')"><i class="ti ti-package"></i>Inventory</button>
       <button class="tab-btn" onclick="showTab('authors-hq')"><i class="ti ti-users"></i>Authors</button>
+      <button class="tab-btn" onclick="showTab('presales')"><i class="ti ti-shopping-cart"></i>Presales</button>
       <button class="tab-btn" onclick="showTab('prizes')"><i class="ti ti-gift"></i>Prizes</button>
       <button class="tab-btn" onclick="showTab('settings')"><i class="ti ti-settings"></i>Settings</button>
     </nav>
@@ -33,7 +35,7 @@ function renderShell() {
 
 function showTab(t) {
   _activeTab = t;
-  const tabs = ['finances','todo','inventory','authors-hq','prizes','settings'];
+  const tabs = ['finances','todo','inventory','authors-hq','presales','prizes','settings'];
   tabs.forEach(x => {
     const el = document.getElementById('tab-'+x);
     if (el) el.style.display = x===t?'block':'none';
@@ -46,6 +48,7 @@ function showTab(t) {
     renderAuthors();
     if (window.FIREBASE_DB_URL && (!S.authors || S.authors.length===0)) restoreAuthorsFromFirebase();
   }
+  if (t==='presales') renderPresales();
   if (t==='prizes')   renderPrizesTab();
   if (t==='settings') renderSettings();
 }
