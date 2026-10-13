@@ -45,6 +45,20 @@ function renderAuthors() {
   const el = document.getElementById('authors-content');
   if (!el) return;
 
+  // Rescue: an author whose status is neither Confirmed nor Asked (e.g. the
+  // old "Maybe") matches no section and would be invisible. Move them to the
+  // wishlist instead.
+  const stray = (S.authors||[]).filter(a => a && a.status !== 'Confirmed' && a.status !== 'Asked');
+  if (stray.length) {
+    S.wishlist = S.wishlist || [];
+    stray.forEach(a => {
+      S.wishlist.push({name:a.name, note:a.notes||'', _expanded:false});
+      if (window.FIREBASE_DB_URL && a.id) fetch(window.FIREBASE_DB_URL + '/authors/' + a.id + '.json', {method:'DELETE'}).catch(()=>{});
+    });
+    S.authors = S.authors.filter(a => a.status === 'Confirmed' || a.status === 'Asked');
+    saveState();
+  }
+
   const all  = S.authors  || [];
   const wish = S.wishlist || [];
 
@@ -327,13 +341,13 @@ function openAddAuthorModal() {
     <h3>Add author</h3>
     <div class="field"><label>Name</label><input type="text" id="aa-name" placeholder="Full name"></div>
     <div class="field"><label>Role</label>
-      <select id="aa-role">
-        <option>Book Signing</option><option>Q&A</option>
+      <select id="aa-role" onchange="document.getElementById('aa-status-field').style.display = this.value==='Wishlist' ? 'none' : ''">
+        <option>Book Signing</option><option>Q&A</option><option>Wishlist</option>
       </select>
     </div>
-    <div class="field"><label>Status</label>
+    <div class="field" id="aa-status-field"><label>Status</label>
       <select id="aa-status">
-        <option>Confirmed</option><option>Asked</option><option>Maybe</option>
+        <option>Confirmed</option><option>Asked</option>
       </select>
     </div>
     <div class="field"><label>Notes (optional)</label><input type="text" id="aa-notes"></div>
@@ -347,6 +361,12 @@ function openAddAuthorModal() {
 function doAddAuthor() {
   const name = document.getElementById('aa-name')?.value?.trim();
   if (!name) { alert('Please enter a name.'); return; }
+  if (document.getElementById('aa-role')?.value === 'Wishlist') {
+    S.wishlist = S.wishlist || [];
+    S.wishlist.push({name, note: document.getElementById('aa-notes')?.value?.trim() || '', _expanded:false});
+    saveState(); closeModal(); renderAuthors();
+    return;
+  }
   const a = {
     id: 'a'+S.nextId++, name,
     role:    document.getElementById('aa-role')?.value   || 'Book Signing',
