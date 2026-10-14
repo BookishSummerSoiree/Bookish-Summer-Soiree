@@ -118,7 +118,20 @@ const PayoutLedger = (function(){
       list.forEach(g => {
         const c = document.createElement("div");
         c.style.cssText = "border:1px solid " + T.border + ";border-radius:12px;padding:12px 14px;margin-bottom:10px;";
-        const books = g.books.map(b => esc(b.title) + (b.signed ? " · signed" : "") + (b.personalizedName ? " · personalized to " + esc(b.personalizedName) : "") + " — " + money(b.price)).join("<br>");
+        // A series bought as a set shows as ONE line (with its books underneath).
+        const sets = {}, parts = [];
+        g.books.forEach(b => {
+          const tag = (b.signed ? " · signed" : "") + (b.personalizedName ? " · personalized to " + esc(b.personalizedName) : "");
+          if(b.seriesSetId){
+            if(!sets[b.seriesSetId]){ sets[b.seriesSetId] = { name: b.seriesName || "Series", titles: [], price: 0, tag: tag }; parts.push({ set: sets[b.seriesSetId] }); }
+            sets[b.seriesSetId].titles.push(b.title); sets[b.seriesSetId].price += b.price;
+          } else {
+            parts.push({ line: esc(b.title) + tag + " — " + money(b.price) });
+          }
+        });
+        const books = parts.map(p => p.set
+          ? "<b>" + esc(p.set.name) + " — Series</b>" + p.set.tag + " — " + money(p.set.price) + '<div style="font-size:12px;color:' + T.muted + ';">Includes: ' + p.set.titles.map(esc).join(", ") + "</div>"
+          : p.line).join("<br>");
         c.innerHTML =
           '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><b>' + esc(g.author) + '</b><span style="color:' + T.muted + ';font-size:12.5px;">' + esc(prettyDate(g.createdAt)) + '</span></div>'
           + '<div style="font-size:12.5px;color:' + T.muted + ';margin:2px 0 8px;">Ordered by ' + esc(g.buyerName || "a reader") + '</div>'
