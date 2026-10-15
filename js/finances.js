@@ -175,11 +175,13 @@ function renderFinances() {
 
   ['misc','swag'].forEach(k => {
     const x = S.expenses.find(y => y.type === 'subtable' && y.subtable === k);
-    if (x) x.spent = r2((S[k]||[]).reduce((t,r) => t + (+r.spent||0), 0));
+    if (x) x.spent = r2((S[k]||[]).reduce((t,r) => t + (+r.spent||0), 0) + (k === 'swag' ? prizeSwagTotal() : 0));
   });
   const totesExp = S.expenses.find(y => y.type === 'subtable' && y.subtable === 'totes');
   if (totesExp) totesExp.spent = r2(+S.totesSpent || 0);
 
+  applyPrizeSpend();
+  refreshPrizeSpend();
   const {paying, totalEst, totalSpent, autoTicket, revenue, surplus} = calcTotals();
   const {total, authors, admin} = S.attendance;
   const spentDiff = totalSpent > 0 ? Math.round((totalSpent - totalEst)*100)/100 : null;
@@ -295,6 +297,7 @@ function expRow(e, i, paying) {
   const diff   = spent > 0 ? Math.round((spent-est)*100)/100 : null;
   const isSub  = e.type === 'subtable';
   const isCC   = e.type === 'cc_fee';
+  const isAuto = e.id === 'prizes_budget' || e.id === 'raffle';
 
   // Price cell
   let priceCell = '';
@@ -336,7 +339,9 @@ function expRow(e, i, paying) {
       <div style="font-size:10px;color:var(--purple)">${fmt(perTix)}/tix</div>
     </div>
     <div class="exp-spent">
-      ${isSub
+      ${isAuto
+        ? `<div style="font-size:12px;color:var(--text2)">${spent>0?fmt(spent):'—'}</div><div style="font-size:9px;color:var(--text3)">from Prizes</div>`
+        : isSub
         ? `<div style="font-size:12px;color:var(--text2)">${spent>0?fmt(spent):'—'}</div>`
         : moneyIn('es'+i, spent||'', `blurExpField(${i},'spent',this.value,'money')`, 'width:78px;font-size:12px')}
       ${diff!==null?`<div style="font-size:10px;color:${diff>0?'var(--red)':'var(--green)'}">${diff>0?'+':''}${fmt(diff)}</div>`:''}
@@ -866,6 +871,7 @@ function stEstSpent(key, title) {
       </div>
     </div>
     ${isCol('sec:'+key)?'':`<div style="margin-bottom:6px">${sortSelect(key)}</div>
+    ${key==='swag'&&prizeSwagTotal()>0?`<div style="font-size:11px;color:var(--text2);margin-bottom:6px">+ ${fmt(prizeSwagTotal())} paid for SWAG Bag prizes in the Prize Manager (counted in Spent so far)</div>`:''}
     ${rowsHtml}
     ${rows.length===0?`<div style="color:var(--text3);font-size:12px;padding:8px 0">No items yet. Tap + to add one.</div>`:''}
     <div style="text-align:center;padding:14px 0 6px">
@@ -1054,6 +1060,47 @@ function stSwipeEnd(e, key, i) {
   renderFinances();
 }
 
+// ── Prize Manager spending → Finances ───────────────────────────────────────
+// Every prize's "Amount paid" is added up: Raffle prizes go to the Raffle line,
+// everything else (BINGO, Medium, Small, SWAG Bag, uncategorized…) goes to Prizes.
+var _prizeData = null, _prizeSig = null, _prizeFetchAt = 0, _prizeBusy = false;
+
+function isRafflePrize(p) { return String(p.cat||'').trim().toLowerCase() === 'raffle'; }
+function isSwagPrize(p)   { return /swag/i.test(String(p.cat||'')); }
+function prizeSwagTotal() { return _prizeData ? r2(_prizeData.filter(isSwagPrize).reduce((t,x) => t + x.paid, 0)) : 0; }
+
+function applyPrizeSpend() {
+  if (!_prizeData) return;
+  const raffle = r2(_prizeData.filter(isRafflePrize).reduce((t,x) => t + x.paid, 0));
+  const other  = r2(_prizeData.filter(x => !isRafflePrize(x) && !isSwagPrize(x)).reduce((t,x) => t + x.paid, 0));
+  (S.expenses||[]).forEach(e => {
+    if (e.id === 'raffle') e.spent = raffle;
+    if (e.id === 'prizes_budget') e.spent = other;
+  });
+}
+
+function refreshPrizeSpend(force) {
+  if (!window.FIREBASE_DB_URL || _prizeBusy) return;
+  if (!force && Date.now() - _prizeFetchAt < 60000) return;
+  _prizeBusy = true; _prizeFetchAt = Date.now();
+  fetch(window.FIREBASE_DB_URL + '/prizes.json', {cache:'no-store'})
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('read failed')))
+    .then(raw => {
+      const arr = Array.isArray(raw) ? raw : Object.values(raw || {});
+      const list = arr.filter(p => p && typeof p === 'object' && p.id !== undefined)
+        .map(p => ({name: p.name || '(unnamed prize)', cat: p.cat || 'Uncategorized', paid: +p.paid || 0}));
+      const sig = JSON.stringify(list.map(x => [x.name, x.cat, x.paid]));
+      const changed = sig !== _prizeSig;
+      _prizeSig = sig; _prizeData = list;
+      if (changed) {
+        applyPrizeSpend(); saveState();
+        if (document.getElementById('tab-finances')?.style.display !== 'none') renderFinances();
+      }
+    })
+    .catch(() => {})
+    .finally(() => { _prizeBusy = false; });
+}
+
 // ── Collapse + sort helpers ─────────────────────────────────────────────────
 function isCol(id) { return !!(S.collapsed && S.collapsed[id]); }
 function toggleCol(id) {
@@ -1102,6 +1149,11 @@ function spentEntries() {
   const add = (label, cat, amt) => { amt = r2(amt); if (amt > 0) out.push({label: label||'(unnamed)', cat, amt}); };
   const labels = {hats:'Hats', tshirts:'T-shirts', ...(S.merchLabels||{})};
   (S.expenses||[]).forEach(e => {
+    if ((e.id === 'prizes_budget' || e.id === 'raffle') && _prizeData) {
+      _prizeData.filter(x => e.id === 'raffle' ? isRafflePrize(x) : (!isRafflePrize(x) && !isSwagPrize(x)))
+        .forEach(x => add(x.name, e.id === 'raffle' ? 'Raffle prizes' : 'Prizes: ' + x.cat, x.paid));
+      return;
+    }
     if (e.type !== 'subtable') { add(e.label, 'Expenses', e.spent); return; }
     const k = e.subtable;
     if ((S.merchOptions||[]).includes(k)) {
@@ -1111,6 +1163,7 @@ function spentEntries() {
         add(it.name, 'Decor: ' + (it.cat||'Other'), lineCalc(it.calc).spent || +it.spent || 0));
     } else if (k === 'misc' || k === 'swag') {
       (S[k]||[]).forEach(r => add(r.label, k === 'misc' ? 'Misc' : 'Swag bag', r.spent));
+      if (k === 'swag' && _prizeData) _prizeData.filter(isSwagPrize).forEach(x => add(x.name, 'Swag bag', x.paid));
     } else if (k === 'totes') {
       add('Tote bags', 'Tote bags', S.totesSpent);
     } else {
