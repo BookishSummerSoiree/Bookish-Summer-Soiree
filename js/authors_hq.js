@@ -210,6 +210,9 @@ function authorDetail(a, idx) {
         <button class="btn" style="font-size:11px" onclick="moveAuthorToWishlist('${a.id}')">
           → Wishlist
         </button>
+        <button class="btn" style="font-size:11px" onclick="editAuthorName('${a.id}')">
+          <i class="ti ti-pencil"></i> Edit name
+        </button>
       </div>
       <button class="btn danger" style="font-size:11px" onclick="confirmDelete('Remove ${escHtml(a.name)} from authors?',()=>deleteAuthor('${a.id}'))">
         <i class="ti ti-trash"></i> Remove
@@ -236,17 +239,18 @@ function wishDetail(w, idx) {
   return `<div style="padding:10px 12px;border-top:.5px solid var(--border);background:var(--bg2)">
     <div style="font-size:12px;font-weight:500;margin-bottom:8px">Add to 2027 as:</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
-      <button class="btn primary" onclick="addWishlistToYear(${idx},'Q&A','Confirmed')">Q&A (Confirmed)</button>
-      <button class="btn primary" onclick="addWishlistToYear(${idx},'Q&A','Asked')">Q&A (Asked)</button>
-      <button class="btn primary" onclick="addWishlistToYear(${idx},'Book Signing','Confirmed')">Book Signing (Confirmed)</button>
-      <button class="btn primary" onclick="addWishlistToYear(${idx},'Book Signing','Asked')">Book Signing (Asked)</button>
+      <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Q&A','Confirmed')">Q&A (Confirmed)</button>
+      <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Q&A','Asked')">Q&A (Asked)</button>
+      <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Book Signing','Confirmed')">Book Signing (Confirmed)</button>
+      <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Book Signing','Asked')">Book Signing (Asked)</button>
     </div>
     <div style="margin-bottom:6px">
       <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Note</div>
       <input type="text" value="${escHtml(w.note||'')}" style="width:100%;font-size:12px;padding:4px 6px"
-        onblur="setWishNote(${idx},this.value)" placeholder="Notes…">
+        onblur="setWishNote(${realIdx},this.value)" placeholder="Notes…">
     </div>
-    <button class="btn danger" style="font-size:11px;width:100%" onclick="confirmDelete('Remove ${escHtml(w.name)} from wishlist?',()=>deleteWishlist(${idx}))">
+    <button class="btn" style="font-size:11px;width:100%;margin-bottom:6px" onclick="editWishName(${realIdx})"><i class="ti ti-pencil"></i> Edit name</button>
+    <button class="btn danger" style="font-size:11px;width:100%" onclick="confirmDelete('Remove ${escHtml(w.name)} from wishlist?',()=>deleteWishlist(${realIdx}))">
       <i class="ti ti-trash"></i> Remove from wishlist
     </button>
   </div>`;
@@ -307,6 +311,24 @@ function moveAuthorToWishlist(id) {
   S.wishlist = S.wishlist || [];
   S.wishlist.push({name:a.name, note:a.notes||'', _expanded:false});
   S.authors.splice(idx,1);
+  saveState(); renderAuthors();
+}
+
+function editAuthorName(id) {
+  const a = (S.authors||[]).find(x => x.id===id);
+  if (!a) return;
+  const nn = (window.prompt('Correct the author name:', a.name) || '').trim();
+  if (!nn || nn === a.name) return;
+  a.name = nn;
+  saveState(); renderAuthors(); saveAuthorToFirebase(id);
+}
+
+function editWishName(idx) {
+  const w = (S.wishlist||[])[idx];
+  if (!w) return;
+  const nn = (window.prompt('Correct the name:', w.name) || '').trim();
+  if (!nn || nn === w.name) return;
+  w.name = nn;
   saveState(); renderAuthors();
 }
 
