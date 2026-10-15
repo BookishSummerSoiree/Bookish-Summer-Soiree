@@ -205,8 +205,8 @@ function renderFinances() {
         <div style="font-size:16px;font-weight:700;color:${surplus>=0?'var(--green)':'var(--red)'}">${surplus>=0?'+':''}${fmt(surplus)}</div>
         <div style="font-size:10px;color:var(--text3)">revenue ${fmt(revenue)} − costs ${fmt(totalEst)}</div>
       </div>
-      <div class="att-cell">
-        <div class="att-lbl">Spent so far</div>
+      <div class="att-cell" style="cursor:pointer" onclick="openSpentList()" title="Tap to see what's been spent">
+        <div class="att-lbl">Spent so far <i class="ti ti-list-details" style="font-size:11px"></i></div>
         <div style="font-size:16px;font-weight:700">${fmt(totalSpent)}</div>
         <div style="font-size:10px;color:${spentDiff===null?'var(--text3)':spentDiff>0?'var(--red)':'var(--green)'}">
           ${spentDiff===null?'No actuals yet':spentDiff>0?'+'+fmt(spentDiff)+' over':fmt(Math.abs(spentDiff))+' under'}
@@ -1066,6 +1066,72 @@ function sortSelect(k) {
   </select>`;
 }
 function itemCid(r) { if (!r.cid) r.cid = 'c' + (S.nextId++); return r.cid; }
+
+// ── "Spent so far" list ──────────────────────────────────────────────────────
+var _spentSort = 'high';
+
+function spentEntries() {
+  const out = [];
+  const add = (label, cat, amt) => { amt = r2(amt); if (amt > 0) out.push({label: label||'(unnamed)', cat, amt}); };
+  const labels = {hats:'Hats', tshirts:'T-shirts', ...(S.merchLabels||{})};
+  (S.expenses||[]).forEach(e => {
+    if (e.type !== 'subtable') { add(e.label, 'Expenses', e.spent); return; }
+    const k = e.subtable;
+    if ((S.merchOptions||[]).includes(k)) {
+      (S[k]||[]).forEach(r => add(r.label, 'Merch: ' + (labels[k]||k), lineCalc(r).spent));
+    } else if (k === 'decorations') {
+      (S.decorItems||[]).filter(it => it.status === 'buy').forEach(it =>
+        add(it.name, 'Decor: ' + (it.cat||'Other'), lineCalc(it.calc).spent || +it.spent || 0));
+    } else if (k === 'misc' || k === 'swag') {
+      (S[k]||[]).forEach(r => add(r.label, k === 'misc' ? 'Misc' : 'Swag bag', r.spent));
+    } else if (k === 'totes') {
+      add('Tote bags', 'Tote bags', S.totesSpent);
+    } else {
+      add(e.label, 'Expenses', e.spent);
+    }
+  });
+  // Safety net so the list always adds up to the number on the Finances screen.
+  const diff = r2(calcTotals().totalSpent - out.reduce((t,x) => t + x.amt, 0));
+  if (Math.abs(diff) >= 0.01) out.push({label:'Other', cat:'Other', amt: diff});
+  return out;
+}
+
+function spentListHtml() {
+  const list = spentEntries();
+  const total = r2(list.reduce((t,x) => t + x.amt, 0));
+  const nm = x => x.label.toLowerCase();
+  let body = '';
+  const row = x => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:.5px solid var(--border)">
+      <div style="min-width:0"><div style="font-size:13px">${escHtml(x.label)}</div>${_spentSort==='cat'?'':`<div style="font-size:10px;color:var(--text3)">${escHtml(x.cat)}</div>`}</div>
+      <div style="font-size:13px;font-weight:600;flex:none">${fmt(x.amt)}</div></div>`;
+  if (_spentSort === 'cat') {
+    const groups = {};
+    list.forEach(x => { (groups[x.cat] = groups[x.cat] || []).push(x); });
+    body = Object.keys(groups).sort((a,b) => a.localeCompare(b)).map(c => {
+      const g = groups[c].sort((a,b) => b.amt - a.amt);
+      return `<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px;font-weight:700;color:var(--purple-text)"><span>${escHtml(c)}</span><span>${fmt(r2(g.reduce((t,x)=>t+x.amt,0)))}</span></div>` + g.map(row).join('');
+    }).join('');
+  } else {
+    if (_spentSort === 'high') list.sort((a,b) => b.amt - a.amt || nm(a).localeCompare(nm(b)));
+    else if (_spentSort === 'low') list.sort((a,b) => a.amt - b.amt || nm(a).localeCompare(nm(b)));
+    else list.sort((a,b) => nm(a).localeCompare(nm(b)));
+    body = list.map(row).join('');
+  }
+  const sel = v => _spentSort === v ? ' selected' : '';
+  return `<h3>Spent so far: ${fmt(total)}</h3>
+    <div style="margin-bottom:6px"><select style="font-size:16px;padding:2px 4px" onchange="_spentSort=this.value;document.getElementById('spent-list').innerHTML=spentListHtml()">
+      <option value="high"${sel('high')}>Highest first</option>
+      <option value="low"${sel('low')}>Lowest first</option>
+      <option value="alpha"${sel('alpha')}>A to Z</option>
+      <option value="cat"${sel('cat')}>By category</option>
+    </select></div>
+    ${list.length ? body : '<div style="color:var(--text3);font-size:12px;padding:8px 0">Nothing spent yet.</div>'}`;
+}
+
+function openSpentList() {
+  showModal(`<div id="spent-list">${spentListHtml()}</div>
+    <div class="m-actions"><button class="btn" onclick="closeModal()">Close</button></div>`);
+}
 
 function scrollToId(id) {
   const el = document.getElementById(id);
