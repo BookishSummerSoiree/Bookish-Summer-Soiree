@@ -12,12 +12,59 @@ function tipAmt(tip, base) {
   return tip.type === 'pct' ? Math.round((tip.pct||0)/100*base*100)/100 : +(tip.fixedAmt||0);
 }
 
+// ── Cost builder: "$146 for 20, I need 175 → 9 packs, 5 left over" ───────────
+function r2(n) { return Math.round((+n||0)*100)/100; }
+
+// A "cost line" is {price, perPack, needMode, needQty, packs}.
+//   needMode 'attendees' → need = total attendees (top of Finances)
+//   needMode 'custom'    → need = needQty (you typed a different number)
+//   needMode 'flat'      → you simply buy `packs` of them (e.g. 1 pack covers everyone)
+// Older rows that only have price + qty still work (qty = how many).
+function lineCalc(l) {
+  l = l || {};
+  const att     = +((S.attendance||{}).total) || 0;
+  const perPack = Math.max(1, Math.floor(+l.perPack || 1));
+  const price   = +l.price || 0;
+  let mode = l.needMode;
+  if (!mode) mode = (l.qty !== undefined && l.qty !== null && l.qty !== '') ? 'custom' : 'attendees';
+  let need, packs;
+  if (mode === 'flat') {
+    packs = (l.packs === undefined || l.packs === null || l.packs === '') ? 1 : Math.max(0, Math.floor(+l.packs || 0));
+    need  = packs * perPack;
+  } else {
+    need  = mode === 'attendees' ? att : Math.max(0, +(l.needQty !== undefined && l.needQty !== null && l.needQty !== '' ? l.needQty : (l.qty||0)) || 0);
+    packs = Math.ceil(need / perPack);
+  }
+  return {mode, need, packs, perPack, price, total: r2(packs*price), leftover: packs*perPack - need};
+}
+
+function calcSummary(l) {
+  const c = lineCalc(l);
+  const priceTxt = fmt(c.price) + (c.perPack > 1 ? ' for ' + c.perPack : ' each');
+  let needTxt;
+  if (c.mode === 'flat') {
+    needTxt = 'buying ' + c.packs + (c.perPack > 1 ? (c.packs===1?' pack':' packs') : '');
+  } else {
+    needTxt = 'need ' + c.need + (c.perPack > 1 ? ' → ' + c.packs + (c.packs===1?' pack':' packs') + ' (' + (c.packs*c.perPack) + ')' : '');
+    if (c.leftover > 0) needTxt += ' · ' + c.leftover + ' left over';
+  }
+  return priceTxt + ' · ' + needTxt;
+}
+
+function rowEst(r) { return (r && r.useCalc && r.calc) ? lineCalc(r.calc).total : (+(r&&r.est)||0); }
+
+function isMerchIncluded(key) {
+  if (S.merchInclude && S.merchInclude[key] !== undefined) return !!S.merchInclude[key];
+  return key === (S.merchType || 'hats');
+}
+
 function subtableTotal(name) {
+  if (name === 'decorations' && typeof decorTotals === 'function') return decorTotals().est;
   const rows = S[name] || [];
   if (['tshirts','hats','totes'].includes(name) || (S.merchOptions||[]).includes(name)) {
-    return rows.reduce((s,r) => s + Math.round((+r.price||0)*(+r.qty||0)*100)/100, 0);
+    return rows.reduce((s,r) => s + lineCalc(r).total, 0);
   }
-  return rows.reduce((s,r) => s + (+r.est||0), 0);
+  return rows.reduce((s,r) => s + rowEst(r), 0);
 }
 
 function lineEst(e) {
@@ -33,7 +80,7 @@ function lineEst(e) {
   if (e.type === 'subtable') {
     // Skip inactive merch
     const allMerch = S.merchOptions || ['hats','tshirts'];
-    if (allMerch.includes(e.subtable) && e.subtable !== (S.merchType||'hats')) return 0;
+    if (allMerch.includes(e.subtable) && !isMerchIncluded(e.subtable)) return 0;
     return subtableTotal(e.subtable);
   }
   return 0;
@@ -82,6 +129,10 @@ function renderFinances() {
   if (!S.expenses) S.expenses = [];
   if (S.ticketPrice === undefined) S.ticketPrice = 0;
   if (S.ccFeePercent === undefined) S.ccFeePercent = 3.2;
+
+  // Decorations spending comes from the Decorations tab.
+  const decExp = S.expenses.find(x => x.id === 'decorations');
+  if (decExp && typeof decorTotals === 'function') decExp.spent = decorTotals().spent;
 
   const {paying, totalEst, totalSpent, autoTicket, revenue, surplus} = calcTotals();
   const {total, authors, admin} = S.attendance;
@@ -159,7 +210,6 @@ function renderFinances() {
   <!-- SUBTABLES -->
   ${renderMerchSection()}
   ${stPriceQty('totes','Tote bags')}
-  ${stEstSpent('decorations','Decorations')}
   ${stEstSpent('misc','Misc expenses')}
   ${stEstSpent('swag','Swag bag')}
   `;
@@ -190,7 +240,7 @@ function blurTicket(val) {
 function expRow(e, i, paying) {
   // Skip inactive merch subtable lines
   const allMerch = S.merchOptions || ['hats','tshirts'];
-  if (e.type === 'subtable' && allMerch.includes(e.subtable) && e.subtable !== (S.merchType||'hats')) return '';
+  if (e.type === 'subtable' && allMerch.includes(e.subtable) && !isMerchIncluded(e.subtable)) return '';
 
   const est    = lineEst(e);
   const spent  = +(e.spent||0);
@@ -215,7 +265,9 @@ function expRow(e, i, paying) {
       <span style="font-size:11px;color:var(--text3)">%</span>
     </div>`;
   } else if (isSub) {
-    priceCell = `<button class="jump-btn" onclick="scrollToId('st-${e.subtable}')">↓ Go</button>`;
+    priceCell = e.subtable === 'decorations'
+      ? `<button class="jump-btn" onclick="showTab('decor')">Open →</button>`
+      : `<button class="jump-btn" onclick="scrollToId('st-${e.subtable}')">↓ Go</button>`;
   }
 
   // Tip badge
@@ -352,7 +404,7 @@ function openEditExpense(i) {
         </select>
       </div>
       ${(e.unitLabelType||'total')==='set'?`<div class="field"><label>Quantity</label><input type="number" id="ee-qty" value="${e.qty||0}"></div>`:''}`:''}
-    ${isSub?`<div style="font-size:12px;color:var(--text2);padding:8px 0">This line pulls from the <strong>${escHtml(e.subtable)}</strong> section below.</div>`:''}
+    ${isSub?`<div style="font-size:12px;color:var(--text2);padding:8px 0">${e.subtable==='decorations'?'This line pulls from the <strong>Decorations</strong> tab (items marked “I need to buy it”).':'This line pulls from the <strong>'+escHtml(e.subtable)+'</strong> section below.'}</div>`:''}
     ${e.tip&&e.tip.enabled?`
       <div class="field"><label>Tip type</label>
         <select id="ee-tiptype"><option value="fixed"${e.tip.type==='fixed'?' selected':''}>Fixed $</option><option value="pct"${e.tip.type==='pct'?' selected':''}>%</option></select>
@@ -403,80 +455,127 @@ function doEditExpense(i) {
   saveState(); closeModal(); renderFinances();
 }
 
-// ── Merch section ─────────────────────────────────────────────────────────────
+// ── Cost builder UI (shared by Merch, Misc/Swag and Decorations) ──────────────
+
+// Fields for price / how many come at that price / how many you need.
+// p = unique id prefix. l = existing cost line (or undefined for a new one).
+function costFieldsHtml(p, l) {
+  l = l || {};
+  const att = +((S.attendance||{}).total) || 0;
+  const c   = lineCalc(l);
+  const mode = (l.needMode || (l.qty!==undefined && l.qty!==null && l.qty!=='' ? 'custom' : 'attendees'));
+  const customVal = (l.needQty!==undefined && l.needQty!==null && l.needQty!=='') ? l.needQty : (l.qty!==undefined && l.qty!==null && l.qty!=='' ? l.qty : att);
+  const packsVal  = (l.packs!==undefined && l.packs!==null && l.packs!=='') ? l.packs : 1;
+  const radio = (v, html) => `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text);margin:0">
+      <input type="radio" name="${p}-mode" value="${v}" ${mode===v?'checked':''} style="width:auto;flex:none"> ${html}</label>`;
+  return `
+    <div style="display:flex;gap:8px">
+      <div class="field" style="flex:1"><label>Price ($)</label>
+        <input type="text" inputmode="decimal" id="${p}-price" value="${l.price?(+l.price).toFixed(2):''}" placeholder="0.00"></div>
+      <div class="field" style="flex:1"><label>How many come at that price?</label>
+        <input type="text" inputmode="numeric" id="${p}-per" value="${l.perPack||1}"></div>
+    </div>
+    <div class="field" style="margin-bottom:4px"><label>How many do you need?</label>
+      ${radio('attendees', `For everyone (<strong>${att}</strong> attendees)`)}
+      ${radio('custom', `A different number: <input type="text" inputmode="numeric" id="${p}-needq" value="${customVal}" style="width:80px" onfocus="document.querySelector('input[name=&quot;${p}-mode&quot;][value=custom]').checked=true">`)}
+      ${radio('flat', `I just need to buy: <input type="text" inputmode="numeric" id="${p}-packs" value="${packsVal}" style="width:64px" onfocus="document.querySelector('input[name=&quot;${p}-mode&quot;][value=flat]').checked=true"> <span style="color:var(--text2);font-size:12px">(one covers everyone)</span>`)}
+    </div>
+    <button type="button" class="btn" onclick="costCalcPreview('${p}')" style="margin-bottom:6px"><i class="ti ti-calculator"></i> Calculate</button>
+    <div id="${p}-result" style="font-size:12px;background:var(--bg2);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:10px">${l.price ? costResultHtml(c) : '<span style="color:var(--text3)">Tap Calculate to see how many to buy and what it costs.</span>'}</div>`;
+}
+
+function readCostFields(p) {
+  const g = id => document.getElementById(p + '-' + id)?.value;
+  const mode = document.querySelector('input[name="' + p + '-mode"]:checked')?.value || 'attendees';
+  const out = {
+    price:   parseMoney(g('price')),
+    perPack: Math.max(1, parseInt(g('per')) || 1),
+    needMode: mode
+  };
+  if (mode === 'custom') out.needQty = Math.max(0, parseInt(g('needq')) || 0);
+  if (mode === 'flat')   out.packs   = Math.max(0, parseInt(g('packs')) || 0);
+  return out;
+}
+
+function costResultHtml(c) {
+  const {paying} = calcTotals();
+  const perTix = paying > 0 ? r2(c.total / paying) : 0;
+  const lines = [];
+  if (c.mode === 'flat') {
+    lines.push(`Buying <strong>${c.packs}</strong>${c.perPack>1?` pack${c.packs===1?'':'s'} (${c.packs*c.perPack} total)`:''}`);
+  } else {
+    lines.push(`You need <strong>${c.need}</strong>` + (c.perPack>1 ? ` → buy <strong>${c.packs}</strong> pack${c.packs===1?'':'s'} (${c.packs*c.perPack})` : ''));
+    if (c.leftover > 0) lines.push(`${c.leftover} left over`);
+  }
+  lines.push(`Cost: <strong>${fmt(c.total)}</strong>`);
+  lines.push(`<span style="color:var(--purple)">${fmt(perTix)} per ticket</span> <span style="color:var(--text3)">(${paying} paying tickets)</span>`);
+  return lines.join(' · ');
+}
+
+function costCalcPreview(p) {
+  const box = document.getElementById(p + '-result');
+  if (box) box.innerHTML = costResultHtml(lineCalc(readCostFields(p)));
+}
+
+// ── Merch section ──────────────────────────────────────────────────────────
 
 function renderMerchSection() {
   const allMerch = S.merchOptions || ['hats','tshirts'];
   const labels   = {hats:'Hats', tshirts:'T-shirts', ...(S.merchLabels||{})};
-  const active   = S.merchType || 'hats';
-
-  const toggleBtns = allMerch.map(key =>
-    `<button class="merch-toggle-btn${key===active?' active':''}" onclick="setActiveMerch('${key}')">
-      ${escHtml(labels[key]||key)}
-    </button>`
-  ).join('');
+  const {paying} = calcTotals();
+  let includedTotal = 0;
 
   const sections = allMerch.map(key => {
     const rows  = S[key] || [];
-    const total = rows.reduce((s,r) => s+Math.round((+r.price||0)*(+r.qty||0)*100)/100, 0);
-    const isAct = key === active;
+    const total = r2(rows.reduce((s,r) => s + lineCalc(r).total, 0));
+    const inc   = isMerchIncluded(key);
+    if (inc) includedTotal += total;
+    const perTix = paying > 0 ? r2(total/paying) : 0;
     const rowsHtml = rows.map((r,i) => {
-      const isOpen = _stSwipedKey===key && _stSwipedIdx===i;
-      return `<div class="st-row${isOpen?' swiped':''}" id="str-${key}-${i}">
-        <div class="st-row-content" ontouchstart="_authorSwipeX=event.touches[0].clientX" ontouchend="stSwipeEnd(event,'${key}',${i})">
-          <div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--bg);border:.5px solid var(--border);border-radius:var(--radius-sm)">
-            <input class="st-name-input" type="text" value="${escHtml(r.label||'')}" placeholder="Size/style"
-              onblur="stSaveField('${key}',${i},'label',this.value)"
-              onkeydown="if(event.key==='Enter')this.blur()">
-            ${moneyIn('stp'+key+i, r.price, `stSaveField('${key}',${i},'price',parseMoney(this.value))`, 'width:70px;font-size:12px')}
-            ${numIn('stq'+key+i, r.qty, `stSaveField('${key}',${i},'qty',parseInt(this.value)||0)`, 'width:52px;font-size:12px;text-align:right')}
-            <span style="font-size:12px;font-weight:600;min-width:60px;text-align:right">${fmt((+r.price||0)*(+r.qty||0))}</span>
-            <button class="icon-btn del-btn" onclick="confirmDelete('Delete this item?',()=>{S.${key}.splice(${i},1);saveState();renderFinances()})" title="Delete">
-              <i class="ti ti-trash" style="font-size:13px"></i>
-            </button>
-          </div>
+      const c = lineCalc(r);
+      return `<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;margin-bottom:4px;background:var(--bg);border:.5px solid var(--border);border-radius:var(--radius-sm)">
+        <div style="flex:1;min-width:0;cursor:pointer" onclick="openMerchLine('${key}',${i})">
+          <div style="font-size:13px;font-weight:500">${escHtml(r.label||'(unnamed)')}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:1px">${escHtml(calcSummary(r))}</div>
+          ${r.notes?`<div style="font-size:10px;color:var(--text3)">${escHtml(r.notes)}</div>`:''}
         </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:600">${fmt(c.total)}</div>
+          <div style="font-size:10px;color:var(--purple)">${fmt(paying>0?r2(c.total/paying):0)}/tix</div>
+        </div>
+        <button class="icon-btn" onclick="openMerchLine('${key}',${i})" title="Edit"><i class="ti ti-pencil" style="font-size:14px"></i></button>
+        <button class="icon-btn del-btn" onclick="confirmDelete('Delete this item?',()=>deleteMerchLine('${key}',${i}))" title="Delete"><i class="ti ti-trash" style="font-size:14px"></i></button>
       </div>`;
-    }).join('');
+    }).join('') || '<div style="color:var(--text3);font-size:12px;padding:6px 2px">Nothing here yet. Tap “Add item”.</div>';
 
-    return `<div style="margin-bottom:10px;border:.5px solid ${isAct?'var(--green)':'var(--border)'};border-radius:var(--radius-sm);padding:8px;opacity:${isAct?1:0.55}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <div style="font-size:12px;font-weight:600;color:${isAct?'var(--green)':'var(--text2)'}">
-          ${escHtml(labels[key]||key)} ${isAct?'✓ Active':''} · ${fmt(total)}
-        </div>
-        <div style="display:flex;gap:4px">
-          <button class="icon-btn" onclick="S.${key}.push({label:'',price:0,qty:0});saveState();renderFinances()" title="Add row">
-            <i class="ti ti-plus" style="font-size:13px"></i>
-          </button>
-          ${!['hats','tshirts'].includes(key)?`
-          <button class="icon-btn del-btn" onclick="deleteMerchCategory('${key}')" title="Delete category">
-            <i class="ti ti-trash" style="font-size:13px"></i>
-          </button>`:''}
+    return `<div style="margin-bottom:12px;border:.5px solid ${inc?'var(--green)':'var(--border)'};border-radius:var(--radius-sm);padding:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${inc?'var(--green-text)':'var(--text2)'};margin:0;cursor:pointer">
+          <input type="checkbox" ${inc?'checked':''} style="width:18px;height:18px;accent-color:var(--green);flex:none" onchange="toggleMerchInclude('${key}',this.checked)">
+          ${escHtml(labels[key]||key)}
+        </label>
+        <div style="text-align:right">
+          <span style="font-size:13px;font-weight:700">${fmt(total)}</span>
+          <span style="font-size:11px;color:var(--purple);margin-left:6px">${fmt(perTix)}/ticket</span>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 70px 52px 60px 30px;gap:4px;padding:0 4px;margin-bottom:3px">
-        <span style="font-size:10px;color:var(--text3)">Size/style</span>
-        <span style="font-size:10px;color:var(--text3);text-align:right">Price</span>
-        <span style="font-size:10px;color:var(--text3);text-align:right">Qty</span>
-        <span style="font-size:10px;color:var(--text3);text-align:right">Total</span>
-        <span></span>
-      </div>
+      <div style="font-size:10px;color:var(--text3);margin:-2px 0 8px 26px">${inc?'Counted in the budget':'Not counted in the budget (tick to include)'}</div>
       ${rowsHtml}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+        <button class="btn" style="font-size:12px" onclick="openMerchLine('${key}',-1)"><i class="ti ti-plus"></i> Add item</button>
+        ${!['hats','tshirts'].includes(key)?`<button class="icon-btn del-btn" onclick="deleteMerchCategory('${key}')" title="Delete this merch option"><i class="ti ti-trash" style="font-size:14px"></i></button>`:''}
+      </div>
     </div>`;
   }).join('');
 
   return `<div class="card" id="st-merch">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div class="card-title" style="margin-bottom:0">Merch</div>
+      <div class="card-title" style="margin-bottom:0;border:none;padding:0">Merch</div>
       <button class="btn" style="font-size:11px;padding:3px 8px" onclick="openAddMerchCategory()">
         <i class="ti ti-plus"></i> Add option
       </button>
     </div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-      <span style="font-size:12px;color:var(--text2)">Active this year:</span>
-      ${toggleBtns}
-    </div>
-    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Only the active option feeds into the budget.</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Tick every merch option you’re going to do. The ticked ones add up into the Merch budget (${fmt(includedTotal)} right now).</div>
     ${sections}
     <div style="text-align:center;padding:10px 0 4px">
       <button class="btn" style="font-size:11px" onclick="(document.scrollingElement||document.documentElement).scrollTop=0">
@@ -484,6 +583,56 @@ function renderMerchSection() {
       </button>
     </div>
   </div>`;
+}
+
+function toggleMerchInclude(key, on) {
+  if (!S.merchInclude) S.merchInclude = {};
+  // First time: record the current state of every option so nothing else flips.
+  (S.merchOptions||[]).forEach(k => { if (S.merchInclude[k] === undefined) S.merchInclude[k] = isMerchIncluded(k); });
+  S.merchInclude[key] = !!on;
+  saveState(); renderFinances();
+}
+
+function openMerchLine(key, i) {
+  const rows = S[key] || [];
+  const r = i >= 0 ? rows[i] : null;
+  if (i >= 0 && !r) return;
+  const labels = {hats:'Hats', tshirts:'T-shirts', ...(S.merchLabels||{})};
+  showModal(`
+    <h3>${r?'Edit':'Add'} item — ${escHtml(labels[key]||key)}</h3>
+    <div class="field"><label>What is it? (e.g. Tumblers, Sublimation paper, Ink)</label>
+      <input type="text" id="ml-name" value="${escHtml(r?r.label||'':'')}" placeholder="Item name"></div>
+    ${costFieldsHtml('ml', r || {})}
+    <div class="field"><label>Notes (optional)</label><input type="text" id="ml-notes" value="${escHtml(r?r.notes||'':'')}"></div>
+    <div class="field"><label>Link (optional)</label><input type="text" id="ml-url" value="${escHtml(r?r.url||'':'')}"></div>
+    <div class="m-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveMerchLine('${key}',${i})"><i class="ti ti-check"></i> Save</button>
+    </div>`);
+  if (!r) document.getElementById('ml-name')?.focus();
+}
+
+function saveMerchLine(key, i) {
+  const name = document.getElementById('ml-name')?.value?.trim();
+  if (!name) { alert('Please enter a name.'); return; }
+  if (!S[key]) S[key] = [];
+  const cf = readCostFields('ml');
+  const base = i >= 0 ? S[key][i] : {};
+  const line = Object.assign({}, base, cf, {
+    label: name,
+    notes: document.getElementById('ml-notes')?.value?.trim() || '',
+    url:   document.getElementById('ml-url')?.value?.trim() || ''
+  });
+  if (cf.needMode !== 'custom') delete line.needQty;
+  if (cf.needMode !== 'flat')   delete line.packs;
+  line.qty = lineCalc(line).need;   // keeps older code that reads qty happy
+  if (i >= 0) S[key][i] = line; else S[key].push(line);
+  saveState(); closeModal(); renderFinances();
+}
+
+function deleteMerchLine(key, i) {
+  if (S[key]) S[key].splice(i, 1);
+  saveState(); renderFinances();
 }
 
 function setActiveMerch(key) {
@@ -527,6 +676,9 @@ function doAddMerchCategory() {
   if (!S.merchLabels) S.merchLabels = {};
   S.merchLabels[key] = name;
   S[key] = [];
+  if (!S.merchInclude) S.merchInclude = {};
+  (S.merchOptions||[]).forEach(k => { if (S.merchInclude[k] === undefined) S.merchInclude[k] = isMerchIncluded(k); });
+  S.merchInclude[key] = true;
   // Add expense line for it
   S.expenses.push({id:key, label:name, type:'subtable', subtable:key, spent:0, notes:'', expanded:false});
   saveState(); closeModal(); renderFinances();
@@ -537,25 +689,26 @@ function doAddMerchCategory() {
 
 function stEstSpent(key, title) {
   const rows     = S[key] || [];
-  const totEst   = rows.reduce((s,r) => s+(+r.est||0), 0);
+  const totEst   = rows.reduce((s,r) => s+rowEst(r), 0);
   const totSpent = rows.reduce((s,r) => s+(+r.spent||0), 0);
   const {paying} = calcTotals();
   const perTix   = paying > 0 ? Math.round(totEst/paying*100)/100 : 0;
 
   const rowsHtml = rows.map((r,i) => {
-    const diff = r.spent > 0 ? Math.round((+r.spent-(+r.est||0))*100)/100 : null;
+    const diff = r.spent > 0 ? Math.round((+r.spent-rowEst(r))*100)/100 : null;
     return `<div style="padding:7px 0;border-bottom:.5px solid var(--border)">
       <div style="display:flex;align-items:center;gap:6px">
         <div style="flex:1;min-width:0">
           <input class="st-name-input" type="text" value="${escHtml(r.label||'')}" placeholder="Item name"
             onblur="stSaveField('${key}',${i},'label',this.value)"
             onkeydown="if(event.key==='Enter')this.blur()">
+          ${r.useCalc&&r.calc?`<div style="font-size:10px;color:var(--purple);margin-top:1px">${escHtml(calcSummary(r.calc))}</div>`:''}
           ${r.notes?`<div style="font-size:10px;color:var(--text3);margin-top:1px">${escHtml(r.notes)}</div>`:''}
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
           <div style="text-align:right">
             <div style="font-size:10px;color:var(--text3)">Est</div>
-            ${moneyIn('se'+key+i+'e', r.est, `stSaveField('${key}',${i},'est',parseMoney(this.value))`, 'width:70px;font-size:12px')}
+            ${moneyIn('se'+key+i+'e', rowEst(r), `stSaveField('${key}',${i},'est',parseMoney(this.value))`, 'width:70px;font-size:12px')}
           </div>
           <div style="text-align:right">
             <div style="font-size:10px;color:var(--text3)">Spent</div>
@@ -589,40 +742,58 @@ function stEstSpent(key, title) {
   </div>`;
 }
 
+function stCalcBlock(r) {
+  const on = !!(r && r.useCalc && r.calc);
+  return `
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);margin:4px 0 8px;cursor:pointer">
+      <input type="checkbox" id="sc-use" ${on?'checked':''} style="width:auto;flex:none"
+        onchange="document.getElementById('sc-box').style.display=this.checked?'block':'none';document.getElementById('sc-est-field').style.display=this.checked?'none':'block'">
+      Work out the cost for me (price per pack, how many I need…)
+    </label>
+    <div id="sc-box" style="display:${on?'block':'none'}">${costFieldsHtml('sc', on ? r.calc : {})}</div>`;
+}
+
 function openAddStRow(key) {
   showModal(`
     <h3>Add item</h3>
     <div class="field"><label>Item name</label><input type="text" id="asr-name" placeholder="What is it?"></div>
-    <div class="field"><label>Estimated cost ($)</label><input type="text" inputmode="decimal" id="asr-est" placeholder="0.00"></div>
+    <div class="field" id="sc-est-field"><label>Estimated cost ($)</label><input type="text" inputmode="decimal" id="asr-est" placeholder="0.00"></div>
+    ${stCalcBlock(null)}
     <div class="field"><label>Notes (optional)</label><input type="text" id="asr-notes" placeholder="Any notes…"></div>
     <div class="m-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn primary" onclick="doAddStRow('${key}')"><i class="ti ti-plus"></i> Add</button>
     </div>`);
-  setTimeout(()=>document.getElementById('asr-name')?.focus(),50);
+  document.getElementById('asr-name')?.focus();
 }
 
 function doAddStRow(key) {
   const name = document.getElementById('asr-name')?.value?.trim();
   if (!name) { alert('Please enter a name.'); return; }
   if (!S[key]) S[key] = [];
-  S[key].push({
+  const row = {
     label: name,
-    est:   parseFloat(document.getElementById('asr-est')?.value)||0,
+    est:   parseMoney(document.getElementById('asr-est')?.value),
     spent: 0,
     notes: document.getElementById('asr-notes')?.value?.trim()||'',
     url:   ''
-  });
+  };
+  if (document.getElementById('sc-use')?.checked) {
+    row.calc = readCostFields('sc'); row.useCalc = true; row.est = lineCalc(row.calc).total;
+  }
+  S[key].push(row);
   saveState(); closeModal(); renderFinances();
 }
 
 function openEditStRow(key, i) {
   const r = (S[key]||[])[i];
   if (!r) return;
+  const on = !!(r.useCalc && r.calc);
   showModal(`
     <h3>Edit item</h3>
     <div class="field"><label>Name</label><input type="text" id="esr-name" value="${escHtml(r.label||'')}"></div>
-    <div class="field"><label>Estimated ($)</label><input type="text" inputmode="decimal" id="esr-est" value="${(+(r.est||0)).toFixed(2)}"></div>
+    <div class="field" id="sc-est-field" style="display:${on?'none':'block'}"><label>Estimated ($)</label><input type="text" inputmode="decimal" id="esr-est" value="${rowEst(r).toFixed(2)}"></div>
+    ${stCalcBlock(r)}
     <div class="field"><label>Spent ($)</label><input type="text" inputmode="decimal" id="esr-spent" value="${(+(r.spent||0)).toFixed(2)}"></div>
     <div class="field"><label>Notes</label><input type="text" id="esr-notes" value="${escHtml(r.notes||'')}"></div>
     <div class="field"><label>URL (optional)</label><input type="text" id="esr-url" value="${escHtml(r.url||'')}"></div>
@@ -636,10 +807,15 @@ function doEditStRow(key, i) {
   const r = (S[key]||[])[i];
   if (!r) return;
   r.label = document.getElementById('esr-name')?.value?.trim()  || r.label;
-  r.est   = parseFloat(document.getElementById('esr-est')?.value)  || 0;
-  r.spent = parseFloat(document.getElementById('esr-spent')?.value) || 0;
+  r.spent = parseMoney(document.getElementById('esr-spent')?.value);
   r.notes = document.getElementById('esr-notes')?.value?.trim() || '';
   r.url   = document.getElementById('esr-url')?.value?.trim()   || '';
+  if (document.getElementById('sc-use')?.checked) {
+    r.calc = readCostFields('sc'); r.useCalc = true; r.est = lineCalc(r.calc).total;
+  } else {
+    r.useCalc = false;
+    r.est = parseMoney(document.getElementById('esr-est')?.value);
+  }
   saveState(); closeModal(); renderFinances();
 }
 
@@ -726,6 +902,7 @@ function doAddPQRow(key) {
 function stSaveField(key, i, field, val) {
   if (S[key] && S[key][i] !== undefined) {
     S[key][i][field] = val;
+    if (field === 'est') S[key][i].useCalc = false;   // typing a number yourself turns the calculator off
     saveState();
     renderFinances();
   }

@@ -46,6 +46,12 @@ function stripPrefix(item) {
   return (item||'').replace(/^[^:]+:\s*/,'');
 }
 
+function renderInventoryKeep() {
+  const y = window.scrollY;
+  renderInventory();
+  [0, 30, 100, 250].forEach(ms => setTimeout(() => window.scrollTo(0, y), ms));
+}
+
 function renderInventory() {
   const el = document.getElementById('tab-inventory');
   if (!el) return;
@@ -121,6 +127,7 @@ function invRow(item) {
         <div style="display:flex;gap:6px;align-items:center;margin-top:2px;flex-wrap:wrap">
           <span style="font-size:10px;background:var(--bg2);color:var(--text2);padding:1px 6px;border-radius:8px">${escHtml(item.cat||'Misc')}</span>
           ${item.loc?`<span style="font-size:10px;color:var(--text3)">${escHtml(item.loc)}</span>`:''}
+          ${item.decorId?`<span style="font-size:10px;color:var(--purple)">from Decorations</span>`:''}
         </div>
         ${item.note?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${escHtml(item.note)}</div>`:''}
       </div>
@@ -136,12 +143,12 @@ function invRow(item) {
 
 function togglePacked(id, val) {
   const item = (S.inventory||[]).find(i => i.id===id);
-  if (item) { item.packed = val; saveState(); renderInventory(); }
+  if (item) { item.packed = val; saveState(); renderInventoryKeep(); }
 }
 
 function deleteInvItem(id) {
   S.inventory = (S.inventory||[]).filter(i => i.id!==id);
-  saveState(); renderInventory();
+  saveState(); renderInventoryKeep();
 }
 
 function openAddInvItem() {
@@ -198,7 +205,7 @@ function doAddInvItem() {
     note:   document.getElementById('ai-note')?.value?.trim() || '',
     packed: false
   });
-  saveState(); closeModal(); renderInventory();
+  saveState(); closeModal(); renderInventoryKeep();
 }
 
 function openEditInvItem(id) {
@@ -232,7 +239,7 @@ function doEditInvItem(id) {
   item.cat  = document.getElementById('ei-cat')?.value  || 'Misc';
   item.loc  = document.getElementById('ei-loc')?.value  || "Nicole's";
   item.note = document.getElementById('ei-note')?.value?.trim() || '';
-  saveState(); closeModal(); renderInventory();
+  saveState(); closeModal(); renderInventoryKeep();
 }
 
 function openAddInvCategory() {
@@ -252,5 +259,5 @@ function doAddInvCategory() {
   if (!S.inventoryCategories) S.inventoryCategories = ['Backdrops','Check-in','Decor','Misc','Prize table'];
   if (S.inventoryCategories.includes(name)) { alert('Category already exists.'); return; }
   S.inventoryCategories.push(name);
-  saveState(); closeModal(); renderInventory();
+  saveState(); closeModal(); renderInventoryKeep();
 }

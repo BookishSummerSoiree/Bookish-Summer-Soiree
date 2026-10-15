@@ -96,10 +96,24 @@ function migrateState() {
   S.expenses = (S.expenses||[]).filter(e => !(e.id==='prizes' && e.type==='subtable'));
 
   // Subtables — preserve, restore if empty
-  ['tshirts','hats','totes','prizes','swag','decorations','misc'].forEach(key => {
+  ['tshirts','hats','totes','prizes','swag','misc'].forEach(key => {
     if (!S[key] || S[key].length === 0) S[key] = JSON.parse(JSON.stringify(D[key]));
     S[key] = S[key].map(r => ({label:'',est:0,spent:0,notes:'',url:'',price:0,qty:0,...r}));
   });
+
+  // Decorations now live in S.decorItems (Decorations tab). Move the old list over once.
+  if (!S.decorCategories) S.decorCategories = [...D.decorCategories];
+  if (!S.decorItems) {
+    const old = (S.decorations && S.decorations.length ? S.decorations : D.decorations) || [];
+    S.decorItems = old.map(r => {
+      const est = +r.est || 0;
+      const base = {id:'d'+(S.nextId++), name:r.label||'Item', cat:'Other', notes:r.notes||'', url:r.url||''};
+      return est > 0
+        ? {...base, status:'buy', calc:{price:est, perPack:1, needMode:'flat', packs:1}, spent:+r.spent||0}
+        : {...base, status:'have', loc:'', where:''};
+    });
+    if (S.decorItems.length && !S.decorCategories.includes('Other')) S.decorCategories.push('Other');
+  }
 
   // Custom merch options
   (S.merchOptions||[]).forEach(key => {
@@ -286,8 +300,18 @@ function showModal(html) {
         ${html}
       </div>
     </div>`;
+  // "Add …" windows: put the cursor in the first box right away (must happen
+  // in the same tap, or iPhones won't open the keyboard).
+  if (/<h3>Add/.test(html)) {
+    const f = document.querySelector('#modal-container .modal input[type="text"], #modal-container .modal textarea');
+    if (f) f.focus();
+  }
 }
-function closeModal() { document.getElementById('modal-container').innerHTML=''; }
+function closeModal() {
+  document.getElementById('modal-container').innerHTML='';
+  // Let go of the keyboard and settle the screen so the page isn't left zoomed.
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
 function closeModalOutside(e) { if(e.target.id==='modal-bg') closeModal(); }
 function fmt(n) { return '$'+(+(n||0)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

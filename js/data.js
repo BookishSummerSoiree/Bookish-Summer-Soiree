@@ -16,6 +16,8 @@ const DEFAULT_DATA = {
   },
   peopleContacts: {},
   customLocations: [],
+  decorCategories: ['Tables','Walls','Floor displays'],
+  merchInclude: undefined,
   inventoryCategories: ['Backdrops','Check-in','Decor','Misc','Prize table'],
   todoCategories: ['Authors','Decor','Donations','Inventory','Merch','Name Tags','Print','Prizes','Raffle','SWAG','Totes','Venue','Water Bottles'],
 

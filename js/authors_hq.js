@@ -45,6 +45,20 @@ function renderAuthors() {
   const el = document.getElementById('authors-content');
   if (!el) return;
 
+  // Rescue: an author whose status is neither Confirmed nor Asked (e.g. the
+  // old "Maybe") matches no section and would be invisible. Move them to the
+  // wishlist instead.
+  const stray = (S.authors||[]).filter(a => a && a.status !== 'Confirmed' && a.status !== 'Asked');
+  if (stray.length) {
+    S.wishlist = S.wishlist || [];
+    stray.forEach(a => {
+      S.wishlist.push({name:a.name, note:a.notes||'', _expanded:false});
+      if (window.FIREBASE_DB_URL && a.id) fetch(window.FIREBASE_DB_URL + '/authors/' + a.id + '.json', {method:'DELETE'}).catch(()=>{});
+    });
+    S.authors = S.authors.filter(a => a.status === 'Confirmed' || a.status === 'Asked');
+    saveState();
+  }
+
   const all  = S.authors  || [];
   const wish = S.wishlist || [];
 
@@ -196,6 +210,9 @@ function authorDetail(a, idx) {
         <button class="btn" style="font-size:11px" onclick="moveAuthorToWishlist('${a.id}')">
           → Wishlist
         </button>
+        <button class="btn" style="font-size:11px" onclick="editAuthorName('${a.id}')">
+          <i class="ti ti-pencil"></i> Edit name
+        </button>
       </div>
       <button class="btn danger" style="font-size:11px" onclick="confirmDelete('Remove ${escHtml(a.name)} from authors?',()=>deleteAuthor('${a.id}'))">
         <i class="ti ti-trash"></i> Remove
@@ -218,21 +235,22 @@ function wishCard(w, realIdx) {
   </div>`;
 }
 
-function wishDetail(w, idx) {
+function wishDetail(w, realIdx) {
   return `<div style="padding:10px 12px;border-top:.5px solid var(--border);background:var(--bg2)">
     <div style="font-size:12px;font-weight:500;margin-bottom:8px">Add to 2027 as:</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
-      <button class="btn primary" onclick="addWishlistToYear(${idx},'Q&A','Confirmed')">Q&A (Confirmed)</button>
-      <button class="btn primary" onclick="addWishlistToYear(${idx},'Q&A','Asked')">Q&A (Asked)</button>
-      <button class="btn primary" onclick="addWishlistToYear(${idx},'Book Signing','Confirmed')">Book Signing (Confirmed)</button>
-      <button class="btn primary" onclick="addWishlistToYear(${idx},'Book Signing','Asked')">Book Signing (Asked)</button>
+      <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Q&A','Confirmed')">Q&A (Confirmed)</button>
+      <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Q&A','Asked')">Q&A (Asked)</button>
+      <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Book Signing','Confirmed')">Book Signing (Confirmed)</button>
+      <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Book Signing','Asked')">Book Signing (Asked)</button>
     </div>
     <div style="margin-bottom:6px">
       <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Note</div>
       <input type="text" value="${escHtml(w.note||'')}" style="width:100%;font-size:12px;padding:4px 6px"
-        onblur="setWishNote(${idx},this.value)" placeholder="Notes…">
+        onblur="setWishNote(${realIdx},this.value)" placeholder="Notes…">
     </div>
-    <button class="btn danger" style="font-size:11px;width:100%" onclick="confirmDelete('Remove ${escHtml(w.name)} from wishlist?',()=>deleteWishlist(${idx}))">
+    <button class="btn" style="font-size:11px;width:100%;margin-bottom:6px" onclick="editWishName(${realIdx})"><i class="ti ti-pencil"></i> Edit name</button>
+    <button class="btn danger" style="font-size:11px;width:100%" onclick="confirmDelete('Remove ${escHtml(w.name)} from wishlist?',()=>deleteWishlist(${realIdx}))">
       <i class="ti ti-trash"></i> Remove from wishlist
     </button>
   </div>`;
@@ -296,6 +314,24 @@ function moveAuthorToWishlist(id) {
   saveState(); renderAuthors();
 }
 
+function editAuthorName(id) {
+  const a = (S.authors||[]).find(x => x.id===id);
+  if (!a) return;
+  const nn = (window.prompt('Correct the author name:', a.name) || '').trim();
+  if (!nn || nn === a.name) return;
+  a.name = nn;
+  saveState(); renderAuthors(); saveAuthorToFirebase(id);
+}
+
+function editWishName(idx) {
+  const w = (S.wishlist||[])[idx];
+  if (!w) return;
+  const nn = (window.prompt('Correct the name:', w.name) || '').trim();
+  if (!nn || nn === w.name) return;
+  w.name = nn;
+  saveState(); renderAuthors();
+}
+
 function deleteAuthor(id) {
   S.authors = (S.authors||[]).filter(a => a.id!==id);
   saveState(); renderAuthors();
@@ -327,13 +363,13 @@ function openAddAuthorModal() {
     <h3>Add author</h3>
     <div class="field"><label>Name</label><input type="text" id="aa-name" placeholder="Full name"></div>
     <div class="field"><label>Role</label>
-      <select id="aa-role">
-        <option>Book Signing</option><option>Q&A</option>
+      <select id="aa-role" onchange="document.getElementById('aa-status-field').style.display = this.value==='Wishlist' ? 'none' : ''">
+        <option>Book Signing</option><option>Q&A</option><option>Wishlist</option>
       </select>
     </div>
-    <div class="field"><label>Status</label>
+    <div class="field" id="aa-status-field"><label>Status</label>
       <select id="aa-status">
-        <option>Confirmed</option><option>Asked</option><option>Maybe</option>
+        <option>Confirmed</option><option>Asked</option>
       </select>
     </div>
     <div class="field"><label>Notes (optional)</label><input type="text" id="aa-notes"></div>
@@ -347,6 +383,12 @@ function openAddAuthorModal() {
 function doAddAuthor() {
   const name = document.getElementById('aa-name')?.value?.trim();
   if (!name) { alert('Please enter a name.'); return; }
+  if (document.getElementById('aa-role')?.value === 'Wishlist') {
+    S.wishlist = S.wishlist || [];
+    S.wishlist.push({name, note: document.getElementById('aa-notes')?.value?.trim() || '', _expanded:false});
+    saveState(); closeModal(); renderAuthors();
+    return;
+  }
   const a = {
     id: 'a'+S.nextId++, name,
     role:    document.getElementById('aa-role')?.value   || 'Book Signing',
@@ -423,38 +465,6 @@ function storyIsClosed() { return !!(_story && _story.latest && _story.latest.cl
 function joinStoryPart(p) {
   const body = p.body || '', tail = p.tail || '';
   return tail ? body + ' ' + tail : body;
-}
-
-// Authors can use bold and italic. Saved HTML is rebuilt here keeping only
-// <b>, <i> and line breaks, so nothing else from the database can run.
-function storySafeHtml(html, fallbackText) {
-  if (!html) return escHtml(fallbackText || '').replace(/\n/g, '<br>');
-  const root = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html').body.firstChild;
-  let out = '';
-  const walk = (node, b, i) => node.childNodes.forEach(n => {
-    if (n.nodeType === 3) { let h = escHtml(n.nodeValue); if (i) h = '<i>'+h+'</i>'; if (b) h = '<b>'+h+'</b>'; out += h; }
-    else if (n.nodeType === 1) {
-      if (n.nodeName === 'BR') { out += '<br>'; return; }
-      walk(n, b || n.nodeName === 'B' || n.nodeName === 'STRONG', i || n.nodeName === 'I' || n.nodeName === 'EM');
-    }
-  });
-  if (root) walk(root, false, false);
-  return out;
-}
-
-function copyStory() {
-  const parts = storyParts();
-  const text = parts.map(joinStoryPart).join('\n\n');
-  const html = parts.map(p => '<p>' + storySafeHtml(p.bodyHtml, p.body) + (p.tail ? ' ' + storySafeHtml(p.tailHtml, p.tail) : '') + '</p>').join('');
-  // Rich copy keeps bold/italic when pasted into Google Docs or Word.
-  if (navigator.clipboard && window.ClipboardItem) {
-    navigator.clipboard.write([new ClipboardItem({
-      'text/plain': new Blob([text], {type:'text/plain'}),
-      'text/html':  new Blob([html], {type:'text/html'})
-    })]).then(() => showToast('Story copied')).catch(() => copyText(text, 'Story copied'));
-  } else {
-    copyText(text, 'Story copied');
-  }
 }
 
 function syncStoryFromFirebase(force) {
@@ -575,13 +585,13 @@ function openStoryModal() {
     <div style="max-height:55vh;overflow-y:auto;margin-bottom:12px">
       ${parts.map(p => `<div style="margin-bottom:12px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:2px">${p.seq}. ${escHtml(p.name)}</div>
-        <div style="font-family:Georgia,serif;font-size:14px;line-height:1.55">${storySafeHtml(p.bodyHtml, p.body)}${p.tail ? ` <span style="background:var(--amber-bg);color:var(--amber-text)">${storySafeHtml(p.tailHtml, p.tail)}</span>` : ''}</div>
+        <div style="font-family:Georgia,serif;font-size:14px;line-height:1.55;white-space:pre-wrap">${escHtml(p.body)}${p.tail ? ` <span style="background:var(--amber-bg);color:var(--amber-text)">${escHtml(p.tail)}</span>` : ''}</div>
       </div>`).join('')}
     </div>
     <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Highlighted = the 150 characters passed to the next author.</div>
     <div class="m-actions">
       <button class="btn danger" style="font-size:11px" onclick="clearStory()"><i class="ti ti-trash"></i> Start over</button>
-      <button class="btn primary" onclick="copyStory()"><i class="ti ti-copy"></i> Copy story</button>
+      <button class="btn primary" onclick="copyText(storyParts().map(joinStoryPart).join('\\n\\n'),'Story copied')"><i class="ti ti-copy"></i> Copy story</button>
     </div>`);
 }
 

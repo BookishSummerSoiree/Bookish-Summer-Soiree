@@ -38,6 +38,13 @@ function getTodoCategories() {
   return S.todoCategories || ['Authors','Decor','Donations','Hats','Inventory','Merch','Name Tags','Prizes','Print','Raffle','SWAG','Totes','Venue','Water Bottles'];
 }
 
+// Re-draw the list but stay exactly where you were scrolled to.
+function renderTodoKeep() {
+  const y = window.scrollY;
+  renderTodo();
+  [0, 30, 100, 250].forEach(ms => setTimeout(() => window.scrollTo(0, y), ms));
+}
+
 function renderTodo() {
   const el = document.getElementById('tab-todo');
   if (!el) return;
@@ -127,7 +134,7 @@ function todoRow(t) {
 
 function toggleTodoDone(id, val) {
   const t = (S.todos||[]).find(t => t.id===id);
-  if (t) { t.done = val; saveState(); renderTodo(); }
+  if (t) { t.done = val; saveState(); renderTodoKeep(); }
 }
 
 function setTodoWho(id, val) {
@@ -138,7 +145,7 @@ function setTodoWho(id, val) {
 
 function deleteTodo(id) {
   S.todos = (S.todos||[]).filter(t => t.id!==id);
-  saveState(); renderTodo();
+  saveState(); renderTodoKeep();
 }
 
 function openAddTodo() {
@@ -170,7 +177,7 @@ function doAddTodo() {
     notes: document.getElementById('at-notes')?.value?.trim() || '',
     done:  false
   });
-  saveState(); closeModal(); renderTodo();
+  saveState(); closeModal(); renderTodoKeep();
 }
 
 function openEditTodo(id) {
@@ -208,7 +215,7 @@ function doEditTodo(id) {
   t.cat   = document.getElementById('et-cat')?.value   || '';
   t.who   = document.getElementById('et-who')?.value   || '';
   t.notes = document.getElementById('et-notes')?.value?.trim() || '';
-  saveState(); closeModal(); renderTodo();
+  saveState(); closeModal(); renderTodoKeep();
 }
 
 function openManageTodoCategories() {

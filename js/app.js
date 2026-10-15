@@ -14,6 +14,7 @@ function renderShell() {
       <div id="tab-finances"></div>
       <div id="tab-todo"        style="display:none"></div>
       <div id="tab-inventory"   style="display:none"></div>
+      <div id="tab-decor"       style="display:none"></div>
       <div id="tab-authors-hq"  style="display:none"><div id="authors-content"></div></div>
       <div id="tab-presales"    style="display:none"><div id="presales-content"></div></div>
       <div id="tab-prizes"      style="display:none"><div id="prizes-content"></div></div>
@@ -24,6 +25,7 @@ function renderShell() {
       <button class="tab-btn active" onclick="showTab('finances')"><i class="ti ti-calculator"></i>Finances</button>
       <button class="tab-btn" onclick="showTab('todo')"><i class="ti ti-check"></i>To-do</button>
       <button class="tab-btn" onclick="showTab('inventory')"><i class="ti ti-package"></i>Inventory</button>
+      <button class="tab-btn" onclick="showTab('decor')"><i class="ti ti-armchair"></i>Decor</button>
       <button class="tab-btn" onclick="showTab('authors-hq')"><i class="ti ti-users"></i>Authors</button>
       <button class="tab-btn" onclick="showTab('presales')"><i class="ti ti-shopping-cart"></i>Presales</button>
       <button class="tab-btn" onclick="showTab('prizes')"><i class="ti ti-gift"></i>Prizes</button>
@@ -36,7 +38,9 @@ function renderShell() {
 function showTab(t) {
   _activeTab = t;
   try { localStorage.setItem('soiree_active_tab', t); } catch(e) {}
-  const tabs = ['finances','todo','inventory','authors-hq','presales','prizes','settings'];
+  const tabs = ['finances','todo','inventory','decor','authors-hq','presales','prizes','settings'];
+  // Prizes tab fills the whole screen (one window, no HQ header on top of it).
+  document.querySelector('.shell')?.classList.toggle('prizes-mode', t==='prizes');
   tabs.forEach(x => {
     const el = document.getElementById('tab-'+x);
     if (el) el.style.display = x===t?'block':'none';
@@ -45,6 +49,7 @@ function showTab(t) {
   if (t==='finances')   renderFinances();
   if (t==='todo')       renderTodo();
   if (t==='inventory')  renderInventory();
+  if (t==='decor')      renderDecor();
   if (t==='authors-hq') {
     renderAuthors();
     if (window.FIREBASE_DB_URL && (!S.authors || S.authors.length===0)) restoreAuthorsFromFirebase();
@@ -65,16 +70,7 @@ function renderPrizesTab() {
     return;
   }
   el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-      <span style="font-size:12px;color:var(--text2)">Prize Manager</span>
-      <div style="display:flex;gap:6px">
-        <button class="btn" onclick="document.getElementById('prize-frame').src+=''"><i class="ti ti-refresh"></i> Refresh</button>
-        <a href="${escHtml(url)}" target="_blank" class="btn"><i class="ti ti-external-link"></i> New tab</a>
-      </div>
-    </div>
-    <iframe id="prize-frame" src="${escHtml(url)}"
-      style="width:100%;height:calc(100vh - 180px);min-height:500px;border:.5px solid var(--border);border-radius:var(--radius-md);background:var(--bg)"
-      title="Prize Manager"></iframe>`;
+    <iframe id="prize-frame" src="${escHtml(url)}" class="prize-frame" title="Prize Manager"></iframe>`;
 }
 
 function renderSettings() {
@@ -353,7 +349,7 @@ function boot() {
   loadState();
   renderShell();
   let startTab = 'finances';
-  try { const saved = localStorage.getItem('soiree_active_tab'); if (['finances','todo','inventory','authors-hq','presales','prizes','settings'].indexOf(saved) !== -1) startTab = saved; } catch(e) {}
+  try { const saved = localStorage.getItem('soiree_active_tab'); if (['finances','todo','inventory','decor','authors-hq','presales','prizes','settings'].indexOf(saved) !== -1) startTab = saved; } catch(e) {}
   showTab(startTab);
   // Compare with the cloud copy BEFORE anything is pushed (see storage.js).
   loadFromCloud();
