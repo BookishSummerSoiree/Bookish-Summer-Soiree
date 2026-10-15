@@ -315,6 +315,32 @@ function closeModal() {
 function closeModalOutside(e) { if(e.target.id==='modal-bg') closeModal(); }
 function fmt(n) { return '$'+(+(n||0)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Safe to put inside a '…' string inside an onclick="…" (names with apostrophes
+// used to break the delete buttons).
+function jsq(s) {
+  return escHtml(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,' '));
+}
+
+// Turns web addresses inside text into tappable links.
+function safeUrl(u) {
+  u = String(u||'').trim();
+  if (!u) return '';
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = 'https://' + u;
+  return /^https?:\/\//i.test(u) ? u : '';
+}
+function linkify(text) {
+  return escHtml(text).replace(/(https?:\/\/[^\s<]+)/g, m => {
+    const href = m.replace(/&amp;/g,'&').replace(/&quot;/g,'"');
+    return '<a href="' + escHtml(href) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--purple);word-break:break-all">' + m + '</a>';
+  });
+}
+function linkChip(url, label) {
+  const u = safeUrl(url);
+  if (!u) return '';
+  let host = '';
+  try { host = new URL(u).hostname.replace(/^www\./,''); } catch(e) {}
+  return '<a href="' + escHtml(u) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--purple);text-decoration:none;border:.5px solid var(--purple);border-radius:10px;padding:1px 8px;margin-top:3px"><i class="ti ti-external-link" style="font-size:11px"></i>' + escHtml(label || host || 'Open link') + '</a>';
+}
 function confirmDelete(msg, fn) {
   if (confirm(msg)) fn();
 }

@@ -129,11 +129,11 @@ function invRow(item) {
           ${item.loc?`<span style="font-size:10px;color:var(--text3)">${escHtml(item.loc)}</span>`:''}
           ${item.decorId?`<span style="font-size:10px;color:var(--purple)">from Decorations</span>`:''}
         </div>
-        ${item.note?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${escHtml(item.note)}</div>`:''}
+        ${item.note?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${linkify(item.note)}</div>`:''}
       </div>
       <div style="display:flex;gap:2px;flex-shrink:0">
         <button class="icon-btn" onclick="openEditInvItem(${item.id})" title="Edit"><i class="ti ti-pencil" style="font-size:13px"></i></button>
-        <button class="icon-btn del-btn" onclick="confirmDelete('Delete \\'${escHtml(item.displayItem)}\\'?',()=>deleteInvItem(${item.id}))" title="Delete">
+        <button class="icon-btn del-btn" onclick="confirmDelete('Delete \\'${jsq(item.displayItem)}\\'?',()=>deleteInvItem(${item.id}))" title="Delete">
           <i class="ti ti-trash" style="font-size:13px"></i>
         </button>
       </div>

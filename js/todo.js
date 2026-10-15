@@ -114,7 +114,7 @@ function todoRow(t) {
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;${t.done?'text-decoration:line-through;color:var(--text3)':''}">${escHtml(t.task||'')}</div>
         ${t.cat?`<span style="font-size:10px;background:var(--purple-bg);color:var(--purple-text);padding:1px 7px;border-radius:8px;margin-top:2px;display:inline-block">${escHtml(t.cat)}</span>`:''}
-        ${t.notes?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${escHtml(t.notes)}</div>`:''}
+        ${t.notes?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${linkify(t.notes)}</div>`:''}
         <div style="margin-top:4px">
           <select class="who-select" onchange="setTodoWho(${t.id},this.value)" style="font-size:11px;padding:2px 6px;border-radius:10px;border:.5px solid var(--border2);background:var(--bg2);color:${t.who?'var(--purple-text)':'var(--text3)'}">
             <option value="">Unassigned</option>
@@ -124,7 +124,7 @@ function todoRow(t) {
       </div>
       <div style="display:flex;gap:2px;flex-shrink:0">
         <button class="icon-btn" onclick="openEditTodo(${t.id})" title="Edit"><i class="ti ti-pencil" style="font-size:13px"></i></button>
-        <button class="icon-btn del-btn" onclick="confirmDelete('Delete \\'${escHtml(t.task||'this task')}\\'?',()=>deleteTodo(${t.id}))" title="Delete">
+        <button class="icon-btn del-btn" onclick="confirmDelete('Delete \\'${jsq(t.task||'this task')}\\'?',()=>deleteTodo(${t.id}))" title="Delete">
           <i class="ti ti-trash" style="font-size:13px"></i>
         </button>
       </div>

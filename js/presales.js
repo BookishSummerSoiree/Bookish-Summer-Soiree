@@ -5,9 +5,9 @@
    place shows up in the other (press Refresh, or reopen the screen). */
 const PayoutLedger = (function(){
   const KEY_STORE = "bss:payoutKey";
-  function getKey(){ try{ return sessionStorage.getItem(KEY_STORE) || ""; }catch(e){ return ""; } }
-  function setKey(k){ try{ sessionStorage.setItem(KEY_STORE, k); }catch(e){} }
-  function clearKey(){ try{ sessionStorage.removeItem(KEY_STORE); }catch(e){} }
+  function getKey(){ try{ return localStorage.getItem(KEY_STORE) || sessionStorage.getItem(KEY_STORE) || ""; }catch(e){ try{ return sessionStorage.getItem(KEY_STORE) || ""; }catch(e2){ return ""; } } }
+  function setKey(k){ try{ localStorage.setItem(KEY_STORE, k); }catch(e){ try{ sessionStorage.setItem(KEY_STORE, k); }catch(e2){} } }
+  function clearKey(){ try{ localStorage.removeItem(KEY_STORE); }catch(e){} try{ sessionStorage.removeItem(KEY_STORE); }catch(e){} }
   const esc = s => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const money = n => "$" + (Number(n) || 0).toFixed(2);
   const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); };
@@ -73,7 +73,6 @@ const PayoutLedger = (function(){
       const top = document.createElement("div");
       top.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;";
       top.appendChild(btn(st.loading ? "Refreshing…" : "Refresh", false, load));
-      top.appendChild(btn("Lock", false, () => { clearKey(); st.groups = null; st.needKey = true; paint(); }));
       wrap.appendChild(top);
 
       if(st.error){ const e = document.createElement("div"); e.style.cssText = "color:#b00020;font-size:13px;margin-bottom:10px;"; e.textContent = st.error; wrap.appendChild(e); }

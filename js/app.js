@@ -70,7 +70,7 @@ function renderPrizesTab() {
     return;
   }
   el.innerHTML = `
-    <iframe id="prize-frame" src="${escHtml(url)}" class="prize-frame" title="Prize Manager"></iframe>`;
+    <iframe id="prize-frame" src="${escHtml(url + (url.indexOf('?') > -1 ? '&' : '?') + 'embed=1')}" class="prize-frame" title="Prize Manager"></iframe>`;
 }
 
 function renderSettings() {
@@ -95,7 +95,7 @@ function renderSettings() {
         return `<div style="margin-bottom:14px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
             <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);font-weight:600">${escHtml(grp)}</div>
-            <button class="icon-btn del-btn" onclick="confirmDelete('Delete group \\'${escHtml(grp)}\\'? Members will be removed.',()=>deletePeopleGroup('${escHtml(grp)}'))" title="Delete group">
+            <button class="icon-btn del-btn" onclick="confirmDelete('Delete group \\'${jsq(grp)}\\'? Members will be removed.',()=>deletePeopleGroup('${jsq(grp)}'))" title="Delete group">
               <i class="ti ti-trash" style="font-size:12px"></i>
             </button>
           </div>
@@ -107,7 +107,7 @@ function renderSettings() {
                   `<div style="font-size:10px;color:var(--text3)">${[contacts[p]?.email,contacts[p]?.phone,contacts[p]?.instagram].filter(Boolean).join(' · ')}</div>`:''}
               </div>
               <button class="icon-btn" onclick="openEditPerson('${escHtml(grp)}',${i})" title="Edit"><i class="ti ti-pencil" style="font-size:12px"></i></button>
-              <button class="icon-btn del-btn" onclick="confirmDelete('Remove ${escHtml(p)} from ${escHtml(grp)}?',()=>removePersonFromGroup('${escHtml(grp)}',${i}))" title="Remove">
+              <button class="icon-btn del-btn" onclick="confirmDelete('Remove ${jsq(p)} from ${jsq(grp)}?',()=>removePersonFromGroup('${jsq(grp)}',${i}))" title="Remove">
                 <i class="ti ti-trash" style="font-size:12px"></i>
               </button>
             </div>`).join('')}

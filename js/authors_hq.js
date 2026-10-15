@@ -214,7 +214,7 @@ function authorDetail(a, idx) {
           <i class="ti ti-pencil"></i> Edit name
         </button>
       </div>
-      <button class="btn danger" style="font-size:11px" onclick="confirmDelete('Remove ${escHtml(a.name)} from authors?',()=>deleteAuthor('${a.id}'))">
+      <button class="btn danger" style="font-size:11px" onclick="confirmDelete('Remove ${jsq(a.name)} from authors?',()=>deleteAuthor('${a.id}'))">
         <i class="ti ti-trash"></i> Remove
       </button>
     </div>
@@ -250,7 +250,7 @@ function wishDetail(w, realIdx) {
         onblur="setWishNote(${realIdx},this.value)" placeholder="Notes…">
     </div>
     <button class="btn" style="font-size:11px;width:100%;margin-bottom:6px" onclick="editWishName(${realIdx})"><i class="ti ti-pencil"></i> Edit name</button>
-    <button class="btn danger" style="font-size:11px;width:100%" onclick="confirmDelete('Remove ${escHtml(w.name)} from wishlist?',()=>deleteWishlist(${realIdx}))">
+    <button class="btn danger" style="font-size:11px;width:100%" onclick="confirmDelete('Remove ${jsq(w.name)} from wishlist?',()=>deleteWishlist(${realIdx}))">
       <i class="ti ti-trash"></i> Remove from wishlist
     </button>
   </div>`;

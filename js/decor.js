@@ -10,7 +10,7 @@ function getDecorCategories() {
 function decorTotals() {
   const items = (S.decorItems || []).filter(it => it.status === 'buy');
   const est   = r2(items.reduce((s,it) => s + lineCalc(it.calc).total, 0));
-  const spent = r2(items.reduce((s,it) => s + (+it.spent||0), 0));
+  const spent = r2(items.reduce((s,it) => s + (lineCalc(it.calc).spent || +it.spent || 0), 0));
   return {est, spent, count: items.length};
 }
 
@@ -49,7 +49,7 @@ function renderDecor() {
     } else {
       const c = lineCalc(it.calc);
       detail = `<div style="font-size:11px;color:var(--text2);margin-top:2px">${escHtml(calcSummary(it.calc))}</div>
-        <div style="font-size:11px;margin-top:1px"><strong>${fmt(c.total)}</strong> <span style="color:var(--purple)">· ${fmt(paying>0?r2(c.total/paying):0)}/ticket</span>${+it.spent>0?` <span style="color:var(--text3)">· spent ${fmt(it.spent)}</span>`:''}</div>`;
+        <div style="font-size:11px;margin-top:1px"><strong>${fmt(c.total)}</strong> <span style="color:var(--purple)">· ${fmt(paying>0?r2(c.total/paying):0)}/ticket</span>${(c.spent||+it.spent)>0?` <span style="color:var(--green)">· paid ${fmt(c.spent||it.spent)}</span>`:''}</div>`;
     }
     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:9px 12px;background:var(--bg);border:.5px solid var(--border);border-radius:var(--radius-sm);margin-bottom:4px">
       <div style="flex:1;min-width:0;cursor:pointer" onclick="openDecorItem('${it.id}')">
@@ -58,7 +58,8 @@ function renderDecor() {
           <span style="font-size:10px;padding:1px 7px;border-radius:8px;${have?'background:var(--green-bg);color:var(--green-text)':'background:var(--amber-bg);color:var(--amber-text)'}">${have?'Have it':'Need to buy'}</span>
         </div>
         ${detail}
-        ${it.notes?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${escHtml(it.notes)}</div>`:''}
+        ${it.notes?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${linkify(it.notes)}</div>`:''}
+        ${linkChip(it.url)}
       </div>
       <button class="icon-btn" onclick="openDecorItem('${it.id}')" title="Edit"><i class="ti ti-pencil" style="font-size:14px"></i></button>
       <button class="icon-btn del-btn" onclick="askDeleteDecor('${it.id}')" title="Delete"><i class="ti ti-trash" style="font-size:14px"></i></button>
@@ -127,10 +128,10 @@ function openDecorItem(id, presetCat) {
       <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Items you have also show up in the Inventory tab.</div>
     </div>
     <div id="di-buy" style="display:${status==='buy'?'block':'none'}">
-      ${costFieldsHtml('di', it && it.calc ? it.calc : {})}
-      <div class="field"><label>Spent so far ($)</label><input type="text" inputmode="decimal" id="di-spent" value="${it&&+it.spent?(+it.spent).toFixed(2):''}" placeholder="0.00"></div>
+      ${costFieldsHtml('di', it && it.calc ? ((it.spent>0 && !(it.calc.paid!==undefined||it.calc.bought)) ? {...it.calc, paid: it.spent} : it.calc) : {})}
     </div>
     <div class="field"><label>Notes (optional)</label><input type="text" id="di-notes" value="${escHtml(it?it.notes||'':'')}"></div>
+    <div class="field"><label>Link (optional)</label><input type="text" id="di-url" value="${escHtml(it?it.url||'':'')}" placeholder="https://"></div>
     <div class="m-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn primary" onclick="saveDecorItem(${it?`'${it.id}'`:'null'})"><i class="ti ti-check"></i> Save</button>
@@ -156,6 +157,7 @@ function saveDecorItem(id) {
   it.cat    = document.getElementById('di-cat')?.value || 'Other';
   it.status = status;
   it.notes  = document.getElementById('di-notes')?.value?.trim() || '';
+  it.url    = document.getElementById('di-url')?.value?.trim() || '';
   if (status === 'have') {
     let loc = document.getElementById('di-loc')?.value || "Nicole's";
     if (loc === 'Other') {
@@ -172,7 +174,7 @@ function saveDecorItem(id) {
     it.where = document.getElementById('di-where')?.value?.trim() || '';
   } else {
     it.calc  = readCostFields('di');
-    it.spent = parseMoney(document.getElementById('di-spent')?.value);
+    it.spent = lineCalc(it.calc).spent;
   }
   if (isNew) S.decorItems.push(it);
   syncDecorInventory(it);
