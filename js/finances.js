@@ -1087,7 +1087,7 @@ function refreshPrizeSpend(force) {
     .then(r => r.ok ? r.json() : Promise.reject(new Error('read failed')))
     .then(raw => {
       const arr = Array.isArray(raw) ? raw : Object.values(raw || {});
-      const list = arr.filter(p => p && typeof p === 'object' && p.id !== undefined)
+      const list = arr.filter(p => p && typeof p === 'object' && p.id !== undefined && !p.bundledInto)   // bundled originals are already counted inside their bundle
         .map(p => ({name: p.name || '(unnamed prize)', cat: p.cat || 'Uncategorized', paid: +p.paid || 0}));
       const sig = JSON.stringify(list.map(x => [x.name, x.cat, x.paid]));
       const changed = sig !== _prizeSig;
