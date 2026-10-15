@@ -235,7 +235,7 @@ function wishCard(w, realIdx) {
   </div>`;
 }
 
-function wishDetail(w, idx) {
+function wishDetail(w, realIdx) {
   return `<div style="padding:10px 12px;border-top:.5px solid var(--border);background:var(--bg2)">
     <div style="font-size:12px;font-weight:500;margin-bottom:8px">Add to 2027 as:</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">

@@ -35,6 +35,7 @@ function renderShell() {
 
 function showTab(t) {
   _activeTab = t;
+  try { localStorage.setItem('soiree_active_tab', t); } catch(e) {}
   const tabs = ['finances','todo','inventory','authors-hq','presales','prizes','settings'];
   tabs.forEach(x => {
     const el = document.getElementById('tab-'+x);
@@ -351,7 +352,9 @@ function boot() {
   window.PRIZE_APP_URL   = localStorage.getItem('soiree_prize_url')    || 'https://bookishsummersoiree.github.io/BSS-Prizes';
   loadState();
   renderShell();
-  showTab('finances');
+  let startTab = 'finances';
+  try { const saved = localStorage.getItem('soiree_active_tab'); if (['finances','todo','inventory','authors-hq','presales','prizes','settings'].indexOf(saved) !== -1) startTab = saved; } catch(e) {}
+  showTab(startTab);
   // Compare with the cloud copy BEFORE anything is pushed (see storage.js).
   loadFromCloud();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadFromCloud(); });
