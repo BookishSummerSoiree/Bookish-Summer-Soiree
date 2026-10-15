@@ -78,9 +78,26 @@ function subtableTotal(name) {
 // Tickets the credit card fee applies to: tickets actually sold (attendees minus
 // free authors/admin), unless a "tickets sold" number was typed on the fee line.
 function ccTickets(e) {
-  if (e && e.ticketsSold !== undefined && e.ticketsSold !== null && e.ticketsSold !== '') return Math.max(0, Math.floor(+e.ticketsSold) || 0);
-  return Math.max(0, S.attendance.total - S.attendance.authors - S.attendance.admin);
+  const a = S.attendance || {total:0, authors:0, admin:0};
+  const basis = (e && e.ccBasis) || ((e && e.ticketsSold !== undefined && e.ticketsSold !== null && e.ticketsSold !== '') ? 'set' : 'paying');
+  if (basis === 'total') return Math.max(0, +a.total || 0);
+  if (basis === 'set')   return Math.max(0, Math.floor(+(e && e.ticketsSold)) || 0);
+  return Math.max(0, a.total - a.authors - a.admin);
 }
+// Make sure the credit card fee line is really a credit card fee line.
+function fixCCLine() {
+  (S.expenses||[]).forEach(e => {
+    if ((e.id === 'cc_fee' || /processing/i.test(e.label||'')) && e.type !== 'cc_fee') {
+      e.type = 'cc_fee';
+      if (!e.ccPct) e.ccPct = S.ccFeePercent || 3.2;
+      e.ccBasis = 'paying';
+      delete e.unitLabelType; delete e.qty; delete e.unitPrice; delete e.fixedAmt; delete e.unitLabel;
+    }
+    if (e.type === 'cc_fee' && !e.ccBasis) e.ccBasis = (e.ticketsSold !== undefined && e.ticketsSold !== null && e.ticketsSold !== '') ? 'set' : 'paying';
+  });
+}
+
+function ccBasisOf(e) { return e.ccBasis || ((e.ticketsSold!==undefined&&e.ticketsSold!==null&&e.ticketsSold!=='')?'set':'paying'); }
 
 function lineEst(e) {
   if (e.type === 'cc_fee') {
@@ -142,6 +159,7 @@ function renderFinances() {
   if (!S.attendance) S.attendance = {total:175,authors:18,admin:4};
   S.attendance.admin = getAdminCount();
   if (!S.expenses) S.expenses = [];
+  fixCCLine();
   if (S.ticketPrice === undefined) S.ticketPrice = 0;
   if (S.ccFeePercent === undefined) S.ccFeePercent = 3.2;
 
@@ -310,7 +328,7 @@ function expRow(e, i, paying) {
     <div class="exp-label">
       <div style="font-size:13px;font-weight:500">${escHtml(e.label)}${tipBadge}</div>
       ${e.notes?`<div style="font-size:10px;color:var(--text3)">${escHtml(e.notes)}</div>`:''}
-      ${isCC?`<div style="font-size:10px;color:var(--text3)">on ${ccTickets(e)} tickets sold</div>`:''}
+      ${isCC?`<div style="font-size:10px;color:var(--text3)">${e.ccPct||S.ccFeePercent||3.2}% × ${fmt(S.ticketPrice||0)} × ${ccTickets(e)} ${ccBasisOf(e)==='total'?'attendees':ccBasisOf(e)==='set'?'tickets':'paying tickets'}</div>`:''}
     </div>
     <div class="exp-price">${priceCell}</div>
     <div class="exp-est">
@@ -421,8 +439,15 @@ function openEditExpense(i) {
   showModal(`
     <h3>Edit: ${escHtml(e.label)}</h3>
     <div class="field"><label>Name</label><input type="text" id="ee-name" value="${escHtml(e.label)}"></div>
-    ${isCC?`<div class="field"><label>CC fee %</label><input type="text" inputmode="decimal" id="ee-cc" value="${e.ccPct||S.ccFeePercent||3.2}"></div>
-    <div class="field"><label>Tickets sold <span style="color:var(--text3)">(leave blank to use paying tickets: ${Math.max(0, S.attendance.total - S.attendance.authors - S.attendance.admin)})</span></label><input type="text" inputmode="numeric" id="ee-sold" value="${(e.ticketsSold!==undefined&&e.ticketsSold!==null&&e.ticketsSold!=='')?e.ticketsSold:''}" placeholder="auto"></div>`:''}
+    ${isCC?`<div class="field"><label>CC processing fee (%)</label><input type="text" inputmode="decimal" id="ee-cc" value="${e.ccPct||S.ccFeePercent||3.2}"></div>
+    <div class="field"><label>Work out the total fee from</label>
+      <select id="ee-ccbasis" onchange="document.getElementById('ee-sold-wrap').style.display=this.value==='set'?'block':'none'">
+        <option value="paying"${ccBasisOf(e)==='paying'?' selected':''}>Paying tickets (${Math.max(0, S.attendance.total - S.attendance.authors - S.attendance.admin)})</option>
+        <option value="total"${ccBasisOf(e)==='total'?' selected':''}>Total attendees (${S.attendance.total})</option>
+        <option value="set"${ccBasisOf(e)==='set'?' selected':''}>A number I type</option>
+      </select></div>
+    <div class="field" id="ee-sold-wrap" style="display:${ccBasisOf(e)==='set'?'block':'none'}"><label>Number of tickets</label><input type="text" inputmode="numeric" id="ee-sold" value="${(e.ticketsSold!==undefined&&e.ticketsSold!==null&&e.ticketsSold!=='')?e.ticketsSold:''}"></div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Fee = ${e.ccPct||S.ccFeePercent||3.2}% of the ticket price (${fmt(S.ticketPrice||0)}) × the number of tickets chosen above.</div>`:''}
     ${e.type==='fixed'?`
       <div class="field"><label>Amount ($)</label><input type="text" inputmode="decimal" id="ee-fixed" value="${(+(e.fixedAmt||0)).toFixed(2)}"></div>`:''}
     ${isPer?`
@@ -458,8 +483,10 @@ function doEditExpense(i) {
   if (e.type==='fixed')   e.fixedAmt  = parseFloat(document.getElementById('ee-fixed')?.value)||0;
   if (e.type==='cc_fee')  {
     e.ccPct = parseFloat(document.getElementById('ee-cc')?.value)||3.2;
+    e.ccBasis = document.getElementById('ee-ccbasis')?.value || 'paying';
     const sold = String(document.getElementById('ee-sold')?.value||'').trim();
-    if (sold === '') delete e.ticketsSold; else e.ticketsSold = Math.max(0, parseInt(sold)||0);
+    if (e.ccBasis === 'set' && sold !== '') e.ticketsSold = Math.max(0, parseInt(sold)||0); else delete e.ticketsSold;
+    if (e.ccBasis === 'set' && sold === '') e.ccBasis = 'paying';
   }
   if (e.type==='fixed') {
     const basedFixed = document.getElementById('ee-based-fixed')?.value||'none';
