@@ -99,6 +99,11 @@ function fixCCLine() {
 
 function ccBasisOf(e) { return e.ccBasis || ((e.ticketsSold!==undefined&&e.ticketsSold!==null&&e.ticketsSold!=='')?'set':'paying'); }
 
+// Decorations, Misc and Swag bag can have a budget typed in, just like Photographer.
+// With a budget set, the budget is the planned amount; without one, it is the item total.
+function isBudgetable(e) { return !!e && e.type === 'subtable' && ['decorations','misc','swag'].includes(e.subtable); }
+function hasLineBudget(e) { return isBudgetable(e) && e.budget !== undefined && e.budget !== null && e.budget !== '' && +e.budget > 0; }
+
 function lineEst(e) {
   if (e.type === 'cc_fee') {
     // CC fee = percentage of ticket price × number of paying tickets
@@ -113,6 +118,7 @@ function lineEst(e) {
     // Skip inactive merch
     const allMerch = S.merchOptions || ['hats','tshirts'];
     if (allMerch.includes(e.subtable) && !isMerchIncluded(e.subtable)) return 0;
+    if (hasLineBudget(e)) return Math.round((+e.budget)*100)/100;
     return subtableTotal(e.subtable);
   }
   return 0;
@@ -315,9 +321,16 @@ function expRow(e, i, paying) {
       <span style="font-size:11px;color:var(--text3)">%</span>
     </div>`;
   } else if (isSub) {
-    priceCell = e.subtable === 'decorations'
+    const jump = e.subtable === 'decorations'
       ? `<button class="jump-btn" onclick="showTab('decor')">Open →</button>`
       : `<button class="jump-btn" onclick="scrollToId('st-${e.subtable}')">↓ Go</button>`;
+    if (isBudgetable(e)) {
+      const items = subtableTotal(e.subtable);
+      priceCell = moneyIn('eb'+i, e.budget, `blurExpField(${i},'budget',this.value,'money')`, 'width:80px;font-size:12px')
+        + `<div style="font-size:9px;color:var(--text3);margin-top:1px">budget</div>`
+        + (hasLineBudget(e) ? `<div style="font-size:9px;color:${items>+e.budget?'var(--red)':'var(--text3)'};margin-top:1px">items ${fmt(items)}</div>` : '')
+        + `<div style="margin-top:3px">${jump}</div>`;
+    } else priceCell = jump;
   }
 
   // Tip badge
@@ -465,6 +478,8 @@ function openEditExpense(i) {
         </select>
       </div>
       ${(e.unitLabelType||'total')==='set'?`<div class="field"><label>Quantity</label><input type="number" id="ee-qty" value="${e.qty||0}"></div>`:''}`:''}
+    ${isBudgetable(e)?`<div class="field"><label>Budget ($)</label><input type="text" inputmode="decimal" id="ee-budget" placeholder="Leave blank to use the item total" value="${hasLineBudget(e)?(+e.budget).toFixed(2):''}"></div>
+      <div style="font-size:11px;color:var(--text3);margin:-4px 0 8px">Items below add up to ${fmt(subtableTotal(e.subtable))}. With a budget set, the budget is the planned amount for this line.</div>`:''}
     ${isSub?`<div style="font-size:12px;color:var(--text2);padding:8px 0">${e.subtable==='decorations'?'This line pulls from the <strong>Decorations</strong> tab (items marked “I need to buy it”).':'This line pulls from the <strong>'+escHtml(e.subtable)+'</strong> section below.'}</div>`:''}
     ${e.tip&&e.tip.enabled?`
       <div class="field"><label>Tip type</label>
@@ -486,6 +501,7 @@ function doEditExpense(i) {
   e.label = document.getElementById('ee-name')?.value?.trim() || e.label;
   e.notes = document.getElementById('ee-notes')?.value?.trim() || '';
   if (e.type==='fixed')   e.fixedAmt  = parseFloat(document.getElementById('ee-fixed')?.value)||0;
+  if (isBudgetable(e) && document.getElementById('ee-budget')) e.budget = Math.round(parseMoney(document.getElementById('ee-budget').value)*100)/100;
   if (e.type==='cc_fee')  {
     e.ccPct = parseFloat(document.getElementById('ee-cc')?.value)||3.2;
     e.ccBasis = document.getElementById('ee-ccbasis')?.value || 'paying';
@@ -866,7 +882,7 @@ function stEstSpent(key, title) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px">
       <div style="display:flex;align-items:center;gap:2px;font-size:13px;font-weight:600">${chev('sec:'+key)}${title}</div>
       <div style="display:flex;align-items:center;gap:6px">
-        <span style="font-size:11px;color:var(--text2)">Est ${fmt(totEst)} · Spent ${fmt(totSpent)} · ${fmt(perTix)}/tix</span>
+        <span style="font-size:11px;color:var(--text2)">${(function(){ const le=(S.expenses||[]).find(x=>x.type==='subtable'&&x.subtable===key); return hasLineBudget(le) ? 'Budget '+fmt(+le.budget)+' · ' : ''; })()}Est ${fmt(totEst)} · Spent ${fmt(totSpent)} · ${fmt(perTix)}/tix</span>
         <button class="icon-btn" onclick="openAddStRow('${key}')" title="Add item"><i class="ti ti-plus" style="font-size:14px"></i></button>
       </div>
     </div>
