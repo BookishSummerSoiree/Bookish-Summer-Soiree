@@ -158,6 +158,30 @@ function authorCard(a) {
   </div>`;
 }
 
+// Pop-up: which required to-do items this author has and hasn't finished.
+function showAuthorTodo(id) {
+  const a = (S.authors||[]).find(x => x.id === id);
+  if (!a) return;
+  const p = authorProgress(a);
+  const list = (p && Array.isArray(p.todo)) ? p.todo : null;
+  const line = (it, ok) => `<div style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:.5px solid var(--border);font-size:13px">
+      <i class="ti ti-${ok?'circle-check':'circle'}" style="font-size:16px;margin-top:1px;color:${ok?'var(--green)':'var(--amber, #b7791f)'}"></i>
+      <span style="${ok?'color:var(--text2)':''}">${escHtml(it.l)}</span></div>`;
+  let body;
+  if (!p) {
+    body = '<div style="font-size:13px;color:var(--text2);padding:8px 0">This author hasn\u2019t started their info form yet.</div>';
+  } else if (!list) {
+    body = `<div style="font-size:13px;color:var(--text2);padding:8px 0">They have ${p.done} of ${p.total} required items done. The list of which ones will show up the next time this author opens or saves their info form.</div>`;
+  } else {
+    const todo = list.filter(it => !it.d), done = list.filter(it => it.d);
+    body = (todo.length ? `<div style="font-size:11px;font-weight:600;color:var(--text2);margin:6px 0 2px">STILL TO DO (${todo.length})</div>${todo.map(it=>line(it,false)).join('')}` : `<div style="font-size:13px;color:var(--green);padding:6px 0">Everything required is done.</div>`)
+      + (done.length ? `<div style="font-size:11px;font-weight:600;color:var(--text2);margin:12px 0 2px">DONE (${done.length})</div>${done.map(it=>line(it,true)).join('')}` : '');
+    if (p.at) body += `<div style="font-size:10px;color:var(--text3);margin-top:10px">Last updated ${new Date(p.at).toLocaleString()}</div>`;
+  }
+  showModal(`<h3>${escHtml(a.name)} \u2014 required items</h3>${body}
+    <div class="m-actions"><button class="btn" onclick="closeModal()">Close</button></div>`);
+}
+
 function authorDetail(a, idx) {
   const isQA = a.role==='Q&A'||a.role==='Both';
   const p = authorProgress(a);
@@ -175,7 +199,7 @@ function authorDetail(a, idx) {
       <div>
         <div style="${row}">
           <i class="ti ti-${todoDone?'circle-check':'list-check'}" style="font-size:14px;color:${todoDone?'var(--green)':'var(--text3)'}"></i>
-          <span>To-Do list: <strong style="color:${todoDone?'var(--green)':'var(--text)'}">${p ? p.done+'/'+p.total : '—'}</strong>${p ? '' : ' <span style="font-size:10px;color:var(--text3)">not started</span>'}</span>
+          <span${p ? ` onclick="showAuthorTodo('${a.id}')" style="cursor:pointer;border-bottom:1px dotted var(--text3)" title="Tap to see which items"` : ''}>To-Do list: <strong style="color:${todoDone?'var(--green)':'var(--text)'}">${p ? p.done+'/'+p.total : '—'}</strong>${p ? ' <i class="ti ti-list-details" style="font-size:12px;color:var(--text3)"></i>' : ' <span style="font-size:10px;color:var(--text3)">not started</span>'}</span>
         </div>
         ${box('ticket','Ticket purchased')}
         ${box('multiAuthor','Multi-author story',{note:'auto'})}
