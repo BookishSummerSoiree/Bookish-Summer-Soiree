@@ -456,7 +456,7 @@ async function createPrizeForAuthor(author, type) {
       id:nextId, cat, qty:1, paid:0, value:0,
       name:`${author.name} — ${type==='books'?'Book donation':'SWAG donation'}`,
       donor:author.name, donorType:'author',
-      needTag:true, tagMade:false, tagPrinted:false, tagAttached:false,
+      needTag:type==="books", tagMade:false, tagPrinted:false, tagAttached:false,
       onTote:false, tagGenerated:false, notes:'Auto-created from HQ', _mod:Date.now()
     };
     await fetch(window.FIREBASE_DB_URL + '/prizes/' + nextId + '.json', {
