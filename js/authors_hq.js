@@ -150,7 +150,9 @@ function authorCard(a) {
         <div style="font-size:11px;color:var(--text2)">${escHtml(a.role)} · ${escHtml(a.status)}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-        <span style="font-size:11px;color:${tally.done===tally.total?'var(--green)':'var(--text2)'}">${tally.done}/${tally.total}</span>
+        ${tally.total>0 && tally.done>=tally.total
+          ? `<span title="All done" style="display:inline-flex;align-items:center;gap:5px;background:var(--green);color:#fff;font-size:15px;font-weight:700;line-height:1;padding:5px 10px 5px 7px;border-radius:999px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#fff"/><path d="M4.5 8.4l2.4 2.4 4.6-5" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>${tally.done}/${tally.total}</span>`
+          : `<span style="font-size:17px;font-weight:700;line-height:1;color:var(--text)">${tally.done}<span style="font-weight:500;color:var(--text2)">/${tally.total}</span></span>`}
         <i class="ti ti-chevron-${a._expanded?'up':'down'}" style="font-size:12px;color:var(--text3)"></i>
       </div>
     </div>
