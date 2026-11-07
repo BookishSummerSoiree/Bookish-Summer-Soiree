@@ -66,7 +66,8 @@ function renderAuthors() {
   const qnaAsked     = byLastName(all.filter(a => (a.role==='Q&A'||a.role==='Both') && a.status==='Asked'));
   const sigConf      = byLastName(all.filter(a => a.role==='Book Signing' && a.status==='Confirmed'));
   const sigAsked     = byLastName(all.filter(a => a.role==='Book Signing' && a.status==='Asked'));
-  const wishSorted   = byLastName(wish);
+  const wishSorted   = byLastName(wish.filter(w => !w.next));
+  const possSorted   = byLastName(wish.filter(w => w.next));   // "2027 Possibilities" live in the wishlist array, flagged next:true
 
   const qnaNeeded = Math.max(0, QNA_GOAL - qnaConfirmed.length);
   const sigNeeded = Math.max(0, SIGNING_GOAL - sigConf.length);
@@ -125,7 +126,18 @@ function renderAuthors() {
     html += `<div class="card" style="margin-top:10px">
       <div class="card-title">Wishlist (${wishSorted.length})</div>
       ${wishSorted.map((w) => {
-        const realIdx = wish.findIndex(x => x.name === w.name);
+        const realIdx = wish.findIndex(x => x.name === w.name && !x.next);
+        return wishCard(w, realIdx);
+      }).join('')}
+    </div>`;
+  }
+
+  // 2027 Possibilities (sits right under the Wishlist)
+  if (possSorted.length) {
+    html += `<div class="card" style="margin-top:10px">
+      <div class="card-title">2027 Possibilities (${possSorted.length})</div>
+      ${possSorted.map((w) => {
+        const realIdx = wish.findIndex(x => x.name === w.name && x.next);
         return wishCard(w, realIdx);
       }).join('')}
     </div>`;
@@ -236,6 +248,9 @@ function authorDetail(a, idx) {
         <button class="btn" style="font-size:11px" onclick="moveAuthorToWishlist('${a.id}')">
           → Wishlist
         </button>
+        <button class="btn" style="font-size:11px" onclick="moveAuthorToWishlist('${a.id}',true)">
+          → 2027 Possibilities
+        </button>
         <button class="btn" style="font-size:11px" onclick="editAuthorName('${a.id}')">
           <i class="ti ti-pencil"></i> Edit name
         </button>
@@ -270,14 +285,15 @@ function wishDetail(w, realIdx) {
       <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Book Signing','Confirmed')">Book Signing (Confirmed)</button>
       <button class="btn primary" onclick="addWishlistToYear(${realIdx},'Book Signing','Asked')">Book Signing (Asked)</button>
     </div>
+    <button class="btn" style="font-size:11px;width:100%;margin-bottom:6px" onclick="toggleWishNext(${realIdx})">${w.next ? '\u2190 Move back to Wishlist' : '\u2192 Move to 2027 Possibilities'}</button>
     <div style="margin-bottom:6px">
       <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Note</div>
       <input type="text" value="${escHtml(w.note||'')}" style="width:100%;font-size:12px;padding:4px 6px"
         onblur="setWishNote(${realIdx},this.value)" placeholder="Notes…">
     </div>
     <button class="btn" style="font-size:11px;width:100%;margin-bottom:6px" onclick="editWishName(${realIdx})"><i class="ti ti-pencil"></i> Edit name</button>
-    <button class="btn danger" style="font-size:11px;width:100%" onclick="confirmDelete('Remove ${jsq(w.name)} from wishlist?',()=>deleteWishlist(${realIdx}))">
-      <i class="ti ti-trash"></i> Remove from wishlist
+    <button class="btn danger" style="font-size:11px;width:100%" onclick="confirmDelete('Remove ${jsq(w.name)} from ${w.next?'2027 Possibilities':'the wishlist'}?',()=>deleteWishlist(${realIdx}))">
+      <i class="ti ti-trash"></i> Remove from ${w.next ? '2027 Possibilities' : 'wishlist'}
     </button>
   </div>`;
 }
@@ -297,6 +313,14 @@ function toggleWishExpand(idx) {
 function setAuthorField(id, field, val) {
   const a = (S.authors||[]).find(x => x.id===id);
   if (a) { a[field] = val; saveState(); renderAuthors(); saveAuthorToFirebase(id); }
+}
+
+function toggleWishNext(idx) {
+  const w = (S.wishlist||[])[idx];
+  if (!w) return;
+  w.next = !w.next;
+  w._expanded = false;
+  saveState(); renderAuthors();
 }
 
 function setWishNote(idx, val) {
@@ -330,12 +354,12 @@ function moveAuthorRole(id, newRole) {
   saveState(); saveAuthorToFirebase(id); renderAuthors();
 }
 
-function moveAuthorToWishlist(id) {
+function moveAuthorToWishlist(id, next) {
   const idx = (S.authors||[]).findIndex(x => x.id===id);
   if (idx<0) return;
   const a = S.authors[idx];
   S.wishlist = S.wishlist || [];
-  S.wishlist.push({name:a.name, note:a.notes||'', _expanded:false});
+  S.wishlist.push({name:a.name, note:a.notes||'', _expanded:false, next:!!next});
   S.authors.splice(idx,1);
   saveState(); renderAuthors();
 }
@@ -389,8 +413,8 @@ function openAddAuthorModal() {
     <h3>Add author</h3>
     <div class="field"><label>Name</label><input type="text" id="aa-name" placeholder="Full name"></div>
     <div class="field"><label>Role</label>
-      <select id="aa-role" onchange="document.getElementById('aa-status-field').style.display = this.value==='Wishlist' ? 'none' : ''">
-        <option>Book Signing</option><option>Q&A</option><option>Wishlist</option>
+      <select id="aa-role" onchange="document.getElementById('aa-status-field').style.display = (this.value==='Wishlist'||this.value==='2027 Possibilities') ? 'none' : ''">
+        <option>Book Signing</option><option>Q&A</option><option>Wishlist</option><option>2027 Possibilities</option>
       </select>
     </div>
     <div class="field" id="aa-status-field"><label>Status</label>
@@ -409,9 +433,10 @@ function openAddAuthorModal() {
 function doAddAuthor() {
   const name = document.getElementById('aa-name')?.value?.trim();
   if (!name) { alert('Please enter a name.'); return; }
-  if (document.getElementById('aa-role')?.value === 'Wishlist') {
+  const roleSel = document.getElementById('aa-role')?.value;
+  if (roleSel === 'Wishlist' || roleSel === '2027 Possibilities') {
     S.wishlist = S.wishlist || [];
-    S.wishlist.push({name, note: document.getElementById('aa-notes')?.value?.trim() || '', _expanded:false});
+    S.wishlist.push({name, note: document.getElementById('aa-notes')?.value?.trim() || '', _expanded:false, next: roleSel === '2027 Possibilities'});
     saveState(); closeModal(); renderAuthors();
     return;
   }
