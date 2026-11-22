@@ -663,7 +663,7 @@ function merchItemsHtml(key, rows, paying, sortKey) {
           </div>
           <div style="text-align:right;flex-shrink:0">
             <div style="font-size:13px;font-weight:600">${fmt(c.total)}</div>
-            ${col&&c.spent>0?`<div style="font-size:10px;color:var(--green)">paid ${fmt(c.spent)}</div>`:''}
+            ${col?`<div style="font-size:10px;color:var(--purple)">${fmt(paying>0?r2(c.total/paying):0)}/ticket</div>`:''}
           </div>
           ${trackOn(key)?`<button class="icon-btn" onclick="moveItemToBuy('${key}',${i})" title="This is a tumbler purchase — move into Tumblers purchased"><i class="ti ti-arrow-bar-up" style="font-size:14px"></i></button>`:''}
           <button class="icon-btn" onclick="openMerchLine('${key}',${i})" title="Edit"><i class="ti ti-pencil" style="font-size:14px"></i></button>
