@@ -232,12 +232,12 @@ function renderFinances() {
         ${numIn('att-total', total, 'blurAtt(\'total\',this.value)', 'width:100%;font-size:18px;font-weight:700;text-align:center')}
       </div>
       <div class="att-cell">
-        <div class="att-lbl">Authors (free)</div>
+        <div class="att-lbl">Authors</div>
         ${numIn('att-authors', authors, 'blurAtt(\'authors\',this.value)', 'width:100%;font-size:18px;font-weight:700;text-align:center')}
       </div>
       <div class="att-cell">
-        <div class="att-lbl">Admin (free) <span style="font-size:9px;color:var(--text3)">(from Settings)</span></div>
-        <div style="font-size:18px;font-weight:700;text-align:center;padding:5px 0">${admin}</div>
+        <div class="att-lbl">Admin</div>
+        <div style="font-size:18px;font-weight:700;text-align:center;padding:1px 0">${admin}</div>
       </div>
     </div>
     <div class="att-row" style="margin-top:6px">
