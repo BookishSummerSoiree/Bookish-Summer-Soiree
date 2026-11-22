@@ -700,17 +700,17 @@ function renderMerchSection() {
     const rowsHtml = merchItemsHtml(key, rows, paying, 'merch');
 
     return `<div style="margin-bottom:12px;border:.5px solid ${inc?'var(--green)':'var(--border)'};border-radius:var(--radius-sm);padding:10px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;flex-wrap:wrap">
-        <div><div style="display:flex;align-items:center;gap:2px">${chev('mo:'+key)}<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${inc?'var(--green-text)':'var(--text2)'};margin:0;cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px">
+        <div style="min-width:0"><div style="display:flex;align-items:center;gap:2px">${chev('mo:'+key)}<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${inc?'var(--green-text)':'var(--text2)'};margin:0;cursor:pointer">
           <input type="checkbox" ${inc?'checked':''} style="width:18px;height:18px;accent-color:var(--green);flex:none" onchange="toggleMerchInclude('${key}',this.checked)">
           ${escHtml(labels[key]||key)}
         </label></div>
         <div style="font-size:10px;color:var(--text3);margin:2px 0 0 26px">${inc?'Counted in the budget':'Not counted in the budget (tick to include)'}</div></div>
-        <div style="text-align:right">
+        <div style="text-align:right;flex:none">
           <span style="font-size:13px;font-weight:700">${fmt(total)}</span>
           <span style="font-size:11px;color:var(--purple);margin-left:6px">${fmt(perTix)}/ticket</span>
           ${spentTot>0?`<div style="font-size:11px;color:var(--green)">paid so far ${fmt(spentTot)}</div>`:''}
-          ${tc?`<div style="font-size:12px;font-weight:700;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.have} / ${tc.needed} purchased</div>`:''}
+          ${tc?`<div style="font-size:11px;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text2)'}">${tc.have} / ${tc.needed} purchased</div>`:''}
         </div>
       </div>
       ${isCol('mo:'+key)?'':`
@@ -769,11 +769,9 @@ function trackHtml(key, rows, paying) {
       <button class="icon-btn del-btn" onclick="confirmDelete('Delete this purchase?',()=>deleteTrackBuy('${key}',${i}))" title="Delete"><i class="ti ti-trash" style="font-size:14px"></i></button>
     </div>`).join('') || '<div style="color:var(--text3);font-size:12px;padding:6px 2px">No purchases yet. Tap “Add purchase”.</div>';
   return `<div style="margin:6px 0 10px;border:.5px solid var(--purple);border-radius:var(--radius-sm);padding:8px 10px;background:var(--bg)">
-    <div style="display:flex;align-items:center;gap:2px;margin-bottom:6px">${chev(cid)}<span style="font-size:13px;font-weight:600;cursor:pointer" onclick="toggleCol('${cid}')">${escHtml(label)} purchased</span></div>
-    <div style="display:flex;gap:4px;margin-bottom:${col?0:6}px">
-      ${tile('Total needed', numIn('tr-need-'+key, tc.needed, `setTrackNeeded('${key}',this.value)`, 'width:100%;font-size:13px;font-weight:700;text-align:center;padding:1px 2px;min-height:0;height:22px'))}
-      ${tile('Have', `<div style="font-size:13px;font-weight:700;padding:2px 0">${tc.have}</div>`)}
-      ${tile('Still need', `<div style="font-size:13px;font-weight:700;padding:2px 0;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.still}</div>`)}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:${col?0:6}px">
+      <div style="display:flex;align-items:center;gap:2px;min-width:0">${chev(cid)}<span style="font-size:13px;font-weight:600;cursor:pointer" onclick="toggleCol('${cid}')">${escHtml(label)} purchased</span></div>
+      <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);flex:none">need ${numIn('tr-need-'+key, tc.needed, `setTrackNeeded('${key}',this.value)`, 'width:42px;font-size:11px;text-align:center;padding:0 2px;min-height:0;height:20px')} · have ${tc.have} · still <span style="color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.still}</span></div>
     </div>
     ${col?'':`
     ${buysHtml}
@@ -875,7 +873,7 @@ function renderTotesSection() {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px">
       <div style="display:flex;align-items:center;gap:2px;font-size:13px;font-weight:600">${chev('sec:totes')}Tote bags &amp; supplies</div>
       <div style="display:flex;align-items:center;gap:6px">
-        <div style="text-align:right">
+        <div style="text-align:right;flex:none">
           <span style="font-size:13px;font-weight:700">${fmt(total)}</span>
           <span style="font-size:11px;color:var(--purple);margin-left:6px">${fmt(perTix)}/ticket</span>
           ${spentTot>0?`<div style="font-size:11px;color:var(--green)">paid so far ${fmt(spentTot)}</div>`:''}
