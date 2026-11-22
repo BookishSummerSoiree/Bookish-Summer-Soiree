@@ -80,13 +80,14 @@ function trackData(key) {
   if (!S.purchaseTrack[key]) S.purchaseTrack[key] = {needed: 180, buys: []};
   return S.purchaseTrack[key];
 }
+function buyTotal(b) { return (b && b.total !== undefined && b.total !== null && b.total !== '') ? (+b.total||0) : (+(b&&b.price)||0) * (Math.floor(+(b&&b.qty))||0); }
 function trackCalc(key) {
   if (!trackOn(key)) return null;
   const t = (S.purchaseTrack||{})[key] || {needed: 180, buys: []};
   const buys = t.buys || [];
   const needed = Math.max(0, Math.floor(+t.needed || 0));
   const have = buys.reduce((n,b) => n + (Math.floor(+b.qty) || 0), 0);
-  const spent = r2(buys.reduce((n,b) => n + (+b.price||0) * (Math.floor(+b.qty)||0), 0));
+  const spent = r2(buys.reduce((n,b) => n + buyTotal(b), 0));
   const avg = have > 0 ? spent / have : 0;
   return {needed, have, still: Math.max(0, needed - have), spent, avg: r2(avg),
           projected: have > 0 ? r2(Math.max(spent, avg * needed)) : 0, buys};
@@ -759,10 +760,10 @@ function trackHtml(key, rows, paying) {
       <div style="font-size:10px;color:var(--text3)">${lbl}</div>${val}</div>`;
   const buysHtml = tc.buys.map((b,i) => `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:.5px solid var(--border)">
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px"><strong>${Math.floor(+b.qty)||0}</strong> @ ${fmt(+b.price||0)} each</div>
+        <div style="font-size:13px"><strong>${Math.floor(+b.qty)||0}</strong> for ${fmt(buyTotal(b))}</div>
         ${b.notes?`<div style="font-size:10px;color:var(--text3)">${linkify(b.notes)}</div>`:''}
       </div>
-      <div style="font-size:13px;font-weight:600">${fmt((+b.price||0)*(Math.floor(+b.qty)||0))}</div>
+      <div style="font-size:13px;font-weight:600">${fmt(buyTotal(b))}</div>
       <button class="icon-btn" onclick="moveBuyToItem('${key}',${i})" title="Not a tumbler — move back to items"><i class="ti ti-arrow-back-up" style="font-size:14px"></i></button>
       <button class="icon-btn" onclick="openTrackBuy('${key}',${i})" title="Edit"><i class="ti ti-pencil" style="font-size:14px"></i></button>
       <button class="icon-btn del-btn" onclick="confirmDelete('Delete this purchase?',()=>deleteTrackBuy('${key}',${i}))" title="Delete"><i class="ti ti-trash" style="font-size:14px"></i></button>
@@ -788,9 +789,9 @@ function moveBuyToItem(key, i) {
   const t = trackData(key);
   const b = t.buys[i];
   if (!b) return;
-  const qty = Math.floor(+b.qty) || 0, price = +b.price || 0;
+  const qty = Math.floor(+b.qty) || 0, tot = buyTotal(b), price = qty ? tot / qty : 0;
   if (!S[key]) S[key] = [];
-  S[key].push({label: b.notes || 'Item', price: r2(price), needMode: 'flat', packs: qty || 1, perPack: 1, bought: qty, paid: r2(price * qty)});
+  S[key].push({label: b.notes || 'Item', price: r2(price), needMode: 'flat', packs: qty || 1, perPack: 1, bought: qty, paid: r2(tot)});
   t.buys.splice(i, 1);
   saveState(); renderFinances();
 }
@@ -808,8 +809,8 @@ function openTrackBuy(key, i) {
   showModal(`
     <h3>${b?'Edit':'Add'} purchase — ${escHtml(label)}</h3>
     <div style="display:flex;gap:8px">
-      <div class="field" style="flex:1"><label>Price each ($)</label>
-        <input type="text" inputmode="decimal" id="tb-price" value="${b&&b.price?(+b.price).toFixed(2):''}" placeholder="0.00"></div>
+      <div class="field" style="flex:1"><label>Total paid ($)</label>
+        <input type="text" inputmode="decimal" id="tb-price" value="${b&&buyTotal(b)?buyTotal(b).toFixed(2):''}" placeholder="0.00"></div>
       <div class="field" style="flex:1"><label>Quantity</label>
         <input type="text" inputmode="numeric" id="tb-qty" value="${b?(Math.floor(+b.qty)||''):''}" placeholder="0"></div>
     </div>
@@ -826,7 +827,7 @@ function saveTrackBuy(key, i) {
   const qty = parseInt(document.getElementById('tb-qty')?.value) || 0;
   if (!(qty > 0)) { alert('Please enter how many.'); return; }
   const t = trackData(key);
-  const row = {price, qty, notes: document.getElementById('tb-notes')?.value?.trim() || ''};
+  const row = {total: price, price: qty ? r2(price/qty) : 0, qty, notes: document.getElementById('tb-notes')?.value?.trim() || ''};
   if (i >= 0 && t.buys[i]) t.buys[i] = Object.assign({}, t.buys[i], row); else t.buys.push(row);
   saveState(); closeModal(); renderFinances();
 }
@@ -1353,7 +1354,7 @@ function spentEntries() {
     if ((S.merchOptions||[]).includes(k)) {
       (S[k]||[]).forEach(r => add(r.label, 'Merch: ' + (labels[k]||k), lineCalc(r).spent));
       const tcs = trackCalc(k);
-      if (tcs) tcs.buys.forEach(b => add((labels[k]||k) + ' (' + (Math.floor(+b.qty)||0) + ' @ ' + fmt(+b.price||0) + ')', 'Merch: ' + (labels[k]||k), (+b.price||0) * (Math.floor(+b.qty)||0)));
+      if (tcs) tcs.buys.forEach(b => add((labels[k]||k) + ' (' + (Math.floor(+b.qty)||0) + ' for ' + fmt(buyTotal(b)) + ')', 'Merch: ' + (labels[k]||k), buyTotal(b)));
     } else if (k === 'decorations') {
       (S.decorItems||[]).filter(it => it.status === 'buy').forEach(it =>
         add(it.name, 'Decor: ' + (it.cat||'Other'), lineCalc(it.calc).spent || +it.spent || 0));
