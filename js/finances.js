@@ -757,8 +757,8 @@ function trackHtml(key, rows, paying) {
   const label = ((S.merchLabels||{})[key] || key);
   const perTix = paying > 0 ? r2(tc.projected / paying) : 0;
   const dup = rows.some(r => /tumbler/i.test(r.label||'')) && /tumbler/i.test(label);
-  const tile = (lbl, val, color) => `<div style="flex:1;min-width:0;text-align:center;background:var(--bg2);border-radius:var(--radius-sm);padding:6px 4px">
-      <div style="font-size:10px;color:var(--text3)">${lbl}</div>${val}</div>`;
+  const tile = (lbl, val, color) => `<div style="flex:1;min-width:0;text-align:center;background:var(--bg2);border-radius:var(--radius-sm);padding:3px 4px">
+      <div style="font-size:9px;color:var(--text3)">${lbl}</div>${val}</div>`;
   const buysHtml = tc.buys.map((b,i) => `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:.5px solid var(--border)">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px"><strong>${Math.floor(+b.qty)||0}</strong> for ${fmt(buyTotal(b))}</div>
@@ -771,10 +771,10 @@ function trackHtml(key, rows, paying) {
     </div>`).join('') || '<div style="color:var(--text3);font-size:12px;padding:6px 2px">No purchases yet. Tap “Add purchase”.</div>';
   return `<div style="margin:6px 0 10px;border:.5px solid var(--purple);border-radius:var(--radius-sm);padding:8px 10px;background:var(--bg)">
     <div style="display:flex;align-items:center;gap:2px;margin-bottom:6px">${chev(cid)}<span style="font-size:13px;font-weight:600;cursor:pointer" onclick="toggleCol('${cid}')">${escHtml(label)} purchased</span></div>
-    <div style="display:flex;gap:6px;margin-bottom:${col?0:8}px">
-      ${tile('Total needed', numIn('tr-need-'+key, tc.needed, `setTrackNeeded('${key}',this.value)`, 'width:100%;font-size:16px;font-weight:700;text-align:center'))}
-      ${tile('Have', `<div style="font-size:16px;font-weight:700;padding:5px 0">${tc.have}</div>`)}
-      ${tile('Still need', `<div style="font-size:16px;font-weight:700;padding:5px 0;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.still}</div>`)}
+    <div style="display:flex;gap:4px;margin-bottom:${col?0:6}px">
+      ${tile('Total needed', numIn('tr-need-'+key, tc.needed, `setTrackNeeded('${key}',this.value)`, 'width:100%;font-size:13px;font-weight:700;text-align:center;padding:1px 2px;min-height:0;height:22px'))}
+      ${tile('Have', `<div style="font-size:13px;font-weight:700;padding:2px 0">${tc.have}</div>`)}
+      ${tile('Still need', `<div style="font-size:13px;font-weight:700;padding:2px 0;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.still}</div>`)}
     </div>
     ${col?'':`
     ${buysHtml}
