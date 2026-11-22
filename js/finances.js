@@ -763,6 +763,7 @@ function trackHtml(key, rows, paying) {
         ${b.notes?`<div style="font-size:10px;color:var(--text3)">${linkify(b.notes)}</div>`:''}
       </div>
       <div style="font-size:13px;font-weight:600">${fmt((+b.price||0)*(Math.floor(+b.qty)||0))}</div>
+      <button class="icon-btn" onclick="moveBuyToItem('${key}',${i})" title="Not a tumbler — move back to items"><i class="ti ti-arrow-back-up" style="font-size:14px"></i></button>
       <button class="icon-btn" onclick="openTrackBuy('${key}',${i})" title="Edit"><i class="ti ti-pencil" style="font-size:14px"></i></button>
       <button class="icon-btn del-btn" onclick="confirmDelete('Delete this purchase?',()=>deleteTrackBuy('${key}',${i}))" title="Delete"><i class="ti ti-trash" style="font-size:14px"></i></button>
     </div>`).join('') || '<div style="color:var(--text3);font-size:12px;padding:6px 2px">No purchases yet. Tap “Add purchase”.</div>';
@@ -779,25 +780,19 @@ function trackHtml(key, rows, paying) {
     <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.5">
       Spent so far <strong>${fmt(tc.spent)}</strong>${tc.have>0?` · average <strong>${fmt(tc.avg)}</strong> each · estimate for ${tc.needed}: <strong>${fmt(tc.projected)}</strong> · <span style="color:var(--purple)">${fmt(perTix)}/ticket</span>`:''}
     </div>
-    ${rows.length?`<div style="margin-top:8px;padding:8px;border-radius:var(--radius-sm);background:var(--bg2);font-size:11px;color:var(--text2)">
-      You have ${rows.length} older item${rows.length===1?'':'s'} below. Tap to turn ${rows.length===1?'it':'them'} into purchases here (price each = paid ÷ bought; the old ${rows.length===1?'item is':'items are'} removed so nothing counts twice).
-      <div style="margin-top:6px"><button class="btn primary" style="font-size:12px" onclick="moveRowsToTrack('${key}')"><i class="ti ti-arrow-up"></i> Move ${rows.length===1?'it':'them'} into purchases</button></div></div>`:''}`}
+`}
   </div>`;
 }
 
-function moveRowsToTrack(key) {
-  const rows = S[key] || [];
+function moveBuyToItem(key, i) {
   const t = trackData(key);
-  const keep = [], skipped = [];
-  rows.forEach(r => {
-    const c = lineCalc(r);
-    const qty = c.bought > 0 ? c.bought : (c.price > 0 && c.spent > 0 ? Math.round(c.spent / c.price) : 0);
-    if (qty > 0 && c.spent > 0) t.buys.push({price: r2(c.spent / qty), qty, notes: r.label || ''});
-    else { keep.push(r); skipped.push(r.label || 'item'); }
-  });
-  S[key] = keep;
+  const b = t.buys[i];
+  if (!b) return;
+  const qty = Math.floor(+b.qty) || 0, price = +b.price || 0;
+  if (!S[key]) S[key] = [];
+  S[key].push({label: b.notes || 'Item', price: r2(price), needMode: 'flat', packs: qty || 1, perPack: 1, bought: qty, paid: r2(price * qty)});
+  t.buys.splice(i, 1);
   saveState(); renderFinances();
-  if (skipped.length) alert('Left these as items (no quantity or amount paid): ' + skipped.join(', '));
 }
 
 function setTrackNeeded(key, val) {
