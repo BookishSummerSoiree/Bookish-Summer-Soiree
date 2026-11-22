@@ -66,11 +66,38 @@ function isMerchIncluded(key) {
   return key === (S.merchType || 'hats');
 }
 
+// ── Purchase tracker: buying something in stages (e.g. tumblers) ─────────────
+// Each merch option can keep a list of purchases {price each, qty, notes}. The tracker works out how
+// many you have, how many you still need, what you've spent, the average price of one, and
+// an estimate for the whole amount needed (average x needed). Tumblers have one automatically.
+function trackOn(key) {
+  if ((S.purchaseTrack||{})[key]) return true;
+  if (['hats','tshirts','totes'].includes(key)) return false;
+  return /tumbler/i.test(((S.merchLabels||{})[key]) || key);
+}
+function trackData(key) {
+  if (!S.purchaseTrack) S.purchaseTrack = {};
+  if (!S.purchaseTrack[key]) S.purchaseTrack[key] = {needed: 180, buys: []};
+  return S.purchaseTrack[key];
+}
+function trackCalc(key) {
+  if (!trackOn(key)) return null;
+  const t = (S.purchaseTrack||{})[key] || {needed: 180, buys: []};
+  const buys = t.buys || [];
+  const needed = Math.max(0, Math.floor(+t.needed || 0));
+  const have = buys.reduce((n,b) => n + (Math.floor(+b.qty) || 0), 0);
+  const spent = r2(buys.reduce((n,b) => n + (+b.price||0) * (Math.floor(+b.qty)||0), 0));
+  const avg = have > 0 ? spent / have : 0;
+  return {needed, have, still: Math.max(0, needed - have), spent, avg: r2(avg),
+          projected: have > 0 ? r2(Math.max(spent, avg * needed)) : 0, buys};
+}
+
 function subtableTotal(name) {
   if (name === 'decorations' && typeof decorTotals === 'function') return decorTotals().est;
   const rows = S[name] || [];
   if (['tshirts','hats','totes'].includes(name) || (S.merchOptions||[]).includes(name)) {
-    return rows.reduce((s,r) => s + lineCalc(r).total, 0);
+    const tc = trackCalc(name);
+    return rows.reduce((s,r) => s + lineCalc(r).total, 0) + (tc ? tc.projected : 0);
   }
   return rows.reduce((s,r) => s + rowEst(r), 0);
 }
@@ -175,16 +202,18 @@ function renderFinances() {
   // Merch spending comes from the "bought so far" amounts on each merch item.
   (S.expenses||[]).forEach(x => {
     if (x.type === 'subtable' && (S.merchOptions||[]).includes(x.subtable)) {
-      x.spent = r2((S[x.subtable]||[]).reduce((s,r) => s + lineCalc(r).spent, 0));
+      const tc = trackCalc(x.subtable);
+      x.spent = r2((S[x.subtable]||[]).reduce((s,r) => s + lineCalc(r).spent, 0) + (tc ? tc.spent : 0));
     }
   });
+  migrateTotes();
 
   ['misc','swag'].forEach(k => {
     const x = S.expenses.find(y => y.type === 'subtable' && y.subtable === k);
     if (x) x.spent = r2((S[k]||[]).reduce((t,r) => t + (+r.spent||0), 0) + (k === 'swag' ? prizeSwagTotal() : 0));
   });
   const totesExp = S.expenses.find(y => y.type === 'subtable' && y.subtable === 'totes');
-  if (totesExp) totesExp.spent = r2(+S.totesSpent || 0);
+  if (totesExp) totesExp.spent = r2((S.totes||[]).reduce((t,r) => t + lineCalc(r).spent, 0) + (+S.totesSpent || 0));
 
   applyPrizeSpend();
   refreshPrizeSpend();
@@ -264,7 +293,7 @@ function renderFinances() {
 
   <!-- SUBTABLES -->
   ${renderMerchSection()}
-  ${stPriceQty('totes','Tote bags')}
+  ${renderTotesSection()}
   ${stEstSpent('misc','Misc expenses')}
   ${stEstSpent('swag','Swag bag')}
   `;
@@ -619,20 +648,8 @@ function costCalcPreview(p) {
 
 // ── Merch section ──────────────────────────────────────────────────────────
 
-function renderMerchSection() {
-  const allMerch = S.merchOptions || ['hats','tshirts'];
-  const labels   = {hats:'Hats', tshirts:'T-shirts', ...(S.merchLabels||{})};
-  const {paying} = calcTotals();
-  let includedTotal = 0;
-
-  const sections = allMerch.map(key => {
-    const rows  = S[key] || [];
-    const total = r2(rows.reduce((s,r) => s + lineCalc(r).total, 0));
-    const spentTot = r2(rows.reduce((s,r) => s + lineCalc(r).spent, 0));
-    const inc   = isMerchIncluded(key);
-    if (inc) includedTotal += total;
-    const perTix = paying > 0 ? r2(total/paying) : 0;
-    const rowsHtml = sortedIdx(rows,'merch',r=>lineCalc(r).total).map(i => {
+function merchItemsHtml(key, rows, paying, sortKey) {
+  return sortedIdx(rows,sortKey,r=>lineCalc(r).total).map(i => {
       const r = rows[i];
       const c = lineCalc(r);
       const cid = 'mi:' + itemCid(r);
@@ -661,7 +678,24 @@ function renderMerchSection() {
           </div>
         </div>`}
       </div>`;
-    }).join('') || '<div style="color:var(--text3);font-size:12px;padding:6px 2px">Nothing here yet. Tap “Add item”.</div>';
+  }).join('') || '<div style="color:var(--text3);font-size:12px;padding:6px 2px">Nothing here yet. Tap “Add item”.</div>';
+}
+
+function renderMerchSection() {
+  const allMerch = S.merchOptions || ['hats','tshirts'];
+  const labels   = {hats:'Hats', tshirts:'T-shirts', ...(S.merchLabels||{})};
+  const {paying} = calcTotals();
+  let includedTotal = 0;
+
+  const sections = allMerch.map(key => {
+    const rows  = S[key] || [];
+    const tc    = trackCalc(key);
+    const total = r2(rows.reduce((s,r) => s + lineCalc(r).total, 0) + (tc ? tc.projected : 0));
+    const spentTot = r2(rows.reduce((s,r) => s + lineCalc(r).spent, 0) + (tc ? tc.spent : 0));
+    const inc   = isMerchIncluded(key);
+    if (inc) includedTotal += total;
+    const perTix = paying > 0 ? r2(total/paying) : 0;
+    const rowsHtml = merchItemsHtml(key, rows, paying, 'merch');
 
     return `<div style="margin-bottom:12px;border:.5px solid ${inc?'var(--green)':'var(--border)'};border-radius:var(--radius-sm);padding:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
@@ -673,10 +707,13 @@ function renderMerchSection() {
           <span style="font-size:13px;font-weight:700">${fmt(total)}</span>
           <span style="font-size:11px;color:var(--purple);margin-left:6px">${fmt(perTix)}/ticket</span>
           ${spentTot>0?`<div style="font-size:11px;color:var(--green)">paid so far ${fmt(spentTot)}</div>`:''}
+          ${tc?`<div style="font-size:12px;font-weight:700;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.have} / ${tc.needed} purchased</div>
+          <div style="font-size:11px;color:var(--text2)">${tc.still>0?tc.still+' still needed':'all purchased'}</div>`:''}
         </div>
       </div>
       <div style="font-size:10px;color:var(--text3);margin:-2px 0 4px 26px">${inc?'Counted in the budget':'Not counted in the budget (tick to include)'}</div>
       ${isCol('mo:'+key)?'':`
+      ${trackHtml(key, rows, paying)}
       <div style="display:flex;gap:6px;margin:6px 0">
         <button class="btn" style="font-size:11px;padding:2px 8px" onclick="setAllCol(${JSON.stringify(rows.map(r=>'mi:'+itemCid(r))).replace(/"/g,'&quot;')},true)">Collapse items</button>
         <button class="btn" style="font-size:11px;padding:2px 8px" onclick="setAllCol(${JSON.stringify(rows.map(r=>'mi:'+itemCid(r))).replace(/"/g,'&quot;')},false)">Expand items</button>
@@ -701,6 +738,152 @@ function renderMerchSection() {
     <div style="margin-bottom:8px">${sortSelect('merch')}</div>
     ${sections}
     <div style="text-align:center;padding:10px 0 4px">
+      <button class="btn" style="font-size:11px" onclick="(document.scrollingElement||document.documentElement).scrollTop=0">
+        <i class="ti ti-arrow-up"></i> Return to top
+      </button>
+    </div>`}
+  </div>`;
+}
+
+
+// ── Purchase tracker window (inside a merch option) ─────────────────────────
+function trackHtml(key, rows, paying) {
+  const tc = trackCalc(key);
+  if (!tc) return '';
+  const cid = 'tr:' + key;
+  const col = isCol(cid);
+  const label = ((S.merchLabels||{})[key] || key);
+  const perTix = paying > 0 ? r2(tc.projected / paying) : 0;
+  const dup = rows.some(r => /tumbler/i.test(r.label||'')) && /tumbler/i.test(label);
+  const tile = (lbl, val, color) => `<div style="flex:1;min-width:0;text-align:center;background:var(--bg2);border-radius:var(--radius-sm);padding:6px 4px">
+      <div style="font-size:10px;color:var(--text3)">${lbl}</div>${val}</div>`;
+  const buysHtml = tc.buys.map((b,i) => `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:.5px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px"><strong>${Math.floor(+b.qty)||0}</strong> @ ${fmt(+b.price||0)} each</div>
+        ${b.notes?`<div style="font-size:10px;color:var(--text3)">${linkify(b.notes)}</div>`:''}
+      </div>
+      <div style="font-size:13px;font-weight:600">${fmt((+b.price||0)*(Math.floor(+b.qty)||0))}</div>
+      <button class="icon-btn" onclick="openTrackBuy('${key}',${i})" title="Edit"><i class="ti ti-pencil" style="font-size:14px"></i></button>
+      <button class="icon-btn del-btn" onclick="confirmDelete('Delete this purchase?',()=>deleteTrackBuy('${key}',${i}))" title="Delete"><i class="ti ti-trash" style="font-size:14px"></i></button>
+    </div>`).join('') || '<div style="color:var(--text3);font-size:12px;padding:6px 2px">No purchases yet. Tap “Add purchase”.</div>';
+  return `<div style="margin:6px 0 10px;border:.5px solid var(--purple);border-radius:var(--radius-sm);padding:8px 10px;background:var(--bg)">
+    <div style="display:flex;align-items:center;gap:2px;margin-bottom:6px">${chev(cid)}<span style="font-size:13px;font-weight:600;cursor:pointer" onclick="toggleCol('${cid}')">${escHtml(label)} purchased</span></div>
+    <div style="display:flex;gap:6px;margin-bottom:${col?0:8}px">
+      ${tile('Total needed', numIn('tr-need-'+key, tc.needed, `setTrackNeeded('${key}',this.value)`, 'width:100%;font-size:16px;font-weight:700;text-align:center'))}
+      ${tile('Have', `<div style="font-size:16px;font-weight:700;padding:5px 0">${tc.have}</div>`)}
+      ${tile('Still need', `<div style="font-size:16px;font-weight:700;padding:5px 0;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.still}</div>`)}
+    </div>
+    ${col?'':`
+    ${buysHtml}
+    <div style="margin-top:8px"><button class="btn" style="font-size:12px" onclick="openTrackBuy('${key}',-1)"><i class="ti ti-plus"></i> Add purchase</button></div>
+    <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.5">
+      Spent so far <strong>${fmt(tc.spent)}</strong>${tc.have>0?` · average <strong>${fmt(tc.avg)}</strong> each · estimate for ${tc.needed}: <strong>${fmt(tc.projected)}</strong> · <span style="color:var(--purple)">${fmt(perTix)}/ticket</span>`:''}
+    </div>
+    ${rows.length?`<div style="margin-top:8px;padding:8px;border-radius:var(--radius-sm);background:var(--bg2);font-size:11px;color:var(--text2)">
+      You have ${rows.length} older item${rows.length===1?'':'s'} below. Tap to turn ${rows.length===1?'it':'them'} into purchases here (price each = paid ÷ bought; the old ${rows.length===1?'item is':'items are'} removed so nothing counts twice).
+      <div style="margin-top:6px"><button class="btn primary" style="font-size:12px" onclick="moveRowsToTrack('${key}')"><i class="ti ti-arrow-up"></i> Move ${rows.length===1?'it':'them'} into purchases</button></div></div>`:''}`}
+  </div>`;
+}
+
+function moveRowsToTrack(key) {
+  const rows = S[key] || [];
+  const t = trackData(key);
+  const keep = [], skipped = [];
+  rows.forEach(r => {
+    const c = lineCalc(r);
+    const qty = c.bought > 0 ? c.bought : (c.price > 0 && c.spent > 0 ? Math.round(c.spent / c.price) : 0);
+    if (qty > 0 && c.spent > 0) t.buys.push({price: r2(c.spent / qty), qty, notes: r.label || ''});
+    else { keep.push(r); skipped.push(r.label || 'item'); }
+  });
+  S[key] = keep;
+  saveState(); renderFinances();
+  if (skipped.length) alert('Left these as items (no quantity or amount paid): ' + skipped.join(', '));
+}
+
+function setTrackNeeded(key, val) {
+  trackData(key).needed = Math.max(0, parseInt(val) || 0);
+  saveState(); renderFinances();
+}
+
+function openTrackBuy(key, i) {
+  const t = trackData(key);
+  const b = i >= 0 ? t.buys[i] : null;
+  if (i >= 0 && !b) return;
+  const label = ((S.merchLabels||{})[key] || key);
+  showModal(`
+    <h3>${b?'Edit':'Add'} purchase — ${escHtml(label)}</h3>
+    <div style="display:flex;gap:8px">
+      <div class="field" style="flex:1"><label>Price each ($)</label>
+        <input type="text" inputmode="decimal" id="tb-price" value="${b&&b.price?(+b.price).toFixed(2):''}" placeholder="0.00"></div>
+      <div class="field" style="flex:1"><label>Quantity</label>
+        <input type="text" inputmode="numeric" id="tb-qty" value="${b?(Math.floor(+b.qty)||''):''}" placeholder="0"></div>
+    </div>
+    <div class="field"><label>Notes (optional)</label><input type="text" id="tb-notes" value="${escHtml(b?b.notes||'':'')}" placeholder="e.g. on sale, coupon"></div>
+    <div class="m-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveTrackBuy('${key}',${i})"><i class="ti ti-check"></i> Save</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('tb-price')?.focus(),50);
+}
+
+function saveTrackBuy(key, i) {
+  const price = parseMoney(document.getElementById('tb-price')?.value);
+  const qty = parseInt(document.getElementById('tb-qty')?.value) || 0;
+  if (!(qty > 0)) { alert('Please enter how many.'); return; }
+  const t = trackData(key);
+  const row = {price, qty, notes: document.getElementById('tb-notes')?.value?.trim() || ''};
+  if (i >= 0 && t.buys[i]) t.buys[i] = Object.assign({}, t.buys[i], row); else t.buys.push(row);
+  saveState(); closeModal(); renderFinances();
+}
+
+function deleteTrackBuy(key, i) {
+  const t = trackData(key);
+  t.buys.splice(i, 1);
+  saveState(); renderFinances();
+}
+
+// ── Tote bags & supplies: same item cards as a merch option ─────────────────
+// Old tote rows (price + qty) and the old "spent so far" box carry over unchanged.
+function migrateTotes() {
+  if (S.totesMigrated) return;
+  S.totesMigrated = true;
+  const sp = +S.totesSpent || 0;
+  if (sp > 0 && S.totes && S.totes.length) {
+    const r = S.totes[0];
+    if (r.paid === undefined || r.paid === null || r.paid === '') r.paid = r2(sp);
+    S.totesSpent = 0;
+  }
+  saveState();
+}
+
+function renderTotesSection() {
+  const key = 'totes';
+  const rows = S.totes || [];
+  const {paying} = calcTotals();
+  const total = r2(rows.reduce((s,r) => s + lineCalc(r).total, 0));
+  const spentTot = r2(rows.reduce((s,r) => s + lineCalc(r).spent, 0) + (+S.totesSpent || 0));
+  const perTix = paying > 0 ? r2(total/paying) : 0;
+  const ids = JSON.stringify(rows.map(r => 'mi:' + itemCid(r))).replace(/"/g,'&quot;');
+  return `<div class="card" id="st-totes">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px">
+      <div style="display:flex;align-items:center;gap:2px;font-size:13px;font-weight:600">${chev('sec:totes')}Tote bags &amp; supplies</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div style="text-align:right">
+          <span style="font-size:13px;font-weight:700">${fmt(total)}</span>
+          <span style="font-size:11px;color:var(--purple);margin-left:6px">${fmt(perTix)}/ticket</span>
+          ${spentTot>0?`<div style="font-size:11px;color:var(--green)">paid so far ${fmt(spentTot)}</div>`:''}
+        </div>
+        <button class="icon-btn" onclick="openMerchLine('totes',-1)" title="Add item"><i class="ti ti-plus" style="font-size:14px"></i></button>
+      </div>
+    </div>
+    ${isCol('sec:totes')?'':`<div style="margin-bottom:6px">${sortSelect('totes')}</div>
+    <div style="display:flex;gap:6px;margin:6px 0">
+      <button class="btn" style="font-size:11px;padding:2px 8px" onclick="setAllCol(${ids},true)">Collapse items</button>
+      <button class="btn" style="font-size:11px;padding:2px 8px" onclick="setAllCol(${ids},false)">Expand items</button>
+    </div>
+    ${merchItemsHtml(key, rows, paying, 'totes')}
+    <div style="margin-top:6px"><button class="btn" style="font-size:12px" onclick="openMerchLine('totes',-1)"><i class="ti ti-plus"></i> Add item</button></div>
+    <div style="text-align:center;padding:14px 0 4px">
       <button class="btn" style="font-size:11px" onclick="(document.scrollingElement||document.documentElement).scrollTop=0">
         <i class="ti ti-arrow-up"></i> Return to top
       </button>
@@ -749,7 +932,7 @@ function openMerchLine(key, i) {
   const rows = S[key] || [];
   const r = i >= 0 ? rows[i] : null;
   if (i >= 0 && !r) return;
-  const labels = {hats:'Hats', tshirts:'T-shirts', ...(S.merchLabels||{})};
+  const labels = {hats:'Hats', tshirts:'T-shirts', totes:'Tote bags & supplies', ...(S.merchLabels||{})};
   showModal(`
     <h3>${r?'Edit':'Add'} item — ${escHtml(labels[key]||key)}</h3>
     <div class="field"><label>What is it? (e.g. Tumblers, Sublimation paper, Ink)</label>
@@ -1174,6 +1357,8 @@ function spentEntries() {
     const k = e.subtable;
     if ((S.merchOptions||[]).includes(k)) {
       (S[k]||[]).forEach(r => add(r.label, 'Merch: ' + (labels[k]||k), lineCalc(r).spent));
+      const tcs = trackCalc(k);
+      if (tcs) tcs.buys.forEach(b => add((labels[k]||k) + ' (' + (Math.floor(+b.qty)||0) + ' @ ' + fmt(+b.price||0) + ')', 'Merch: ' + (labels[k]||k), (+b.price||0) * (Math.floor(+b.qty)||0)));
     } else if (k === 'decorations') {
       (S.decorItems||[]).filter(it => it.status === 'buy').forEach(it =>
         add(it.name, 'Decor: ' + (it.cat||'Other'), lineCalc(it.calc).spent || +it.spent || 0));
@@ -1181,7 +1366,8 @@ function spentEntries() {
       (S[k]||[]).forEach(r => add(r.label, k === 'misc' ? 'Misc' : 'Swag bag', r.spent));
       if (k === 'swag' && _prizeData) _prizeData.filter(isSwagPrize).forEach(x => add(x.name, 'Swag bag', x.paid));
     } else if (k === 'totes') {
-      add('Tote bags', 'Tote bags', S.totesSpent);
+      (S.totes||[]).forEach(r => add(r.label || 'Tote bags', 'Tote bags & supplies', lineCalc(r).spent));
+      add('Tote bags', 'Tote bags & supplies', S.totesSpent);
     } else {
       add(e.label, 'Expenses', e.spent);
     }
