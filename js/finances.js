@@ -700,20 +700,19 @@ function renderMerchSection() {
     const rowsHtml = merchItemsHtml(key, rows, paying, 'merch');
 
     return `<div style="margin-bottom:12px;border:.5px solid ${inc?'var(--green)':'var(--border)'};border-radius:var(--radius-sm);padding:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:2px">${chev('mo:'+key)}<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${inc?'var(--green-text)':'var(--text2)'};margin:0;cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+        <div><div style="display:flex;align-items:center;gap:2px">${chev('mo:'+key)}<label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:${inc?'var(--green-text)':'var(--text2)'};margin:0;cursor:pointer">
           <input type="checkbox" ${inc?'checked':''} style="width:18px;height:18px;accent-color:var(--green);flex:none" onchange="toggleMerchInclude('${key}',this.checked)">
           ${escHtml(labels[key]||key)}
         </label></div>
+        <div style="font-size:10px;color:var(--text3);margin:2px 0 0 26px">${inc?'Counted in the budget':'Not counted in the budget (tick to include)'}</div></div>
         <div style="text-align:right">
           <span style="font-size:13px;font-weight:700">${fmt(total)}</span>
           <span style="font-size:11px;color:var(--purple);margin-left:6px">${fmt(perTix)}/ticket</span>
           ${spentTot>0?`<div style="font-size:11px;color:var(--green)">paid so far ${fmt(spentTot)}</div>`:''}
-          ${tc?`<div style="font-size:12px;font-weight:700;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.have} / ${tc.needed} purchased</div>
-          <div style="font-size:11px;color:var(--text2)">${tc.still>0?tc.still+' still needed':'all purchased'}</div>`:''}
+          ${tc?`<div style="font-size:12px;font-weight:700;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text)'}">${tc.have} / ${tc.needed} purchased</div>`:''}
         </div>
       </div>
-      <div style="font-size:10px;color:var(--text3);margin:-2px 0 4px 26px">${inc?'Counted in the budget':'Not counted in the budget (tick to include)'}</div>
       ${isCol('mo:'+key)?'':`
       ${trackHtml(key, rows, paying)}
       <div style="display:flex;gap:6px;margin:6px 0">
