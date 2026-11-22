@@ -207,7 +207,7 @@ function renderFinances() {
       x.spent = r2((S[x.subtable]||[]).reduce((s,r) => s + lineCalc(r).spent, 0) + (tc ? tc.spent : 0));
     }
   });
-  migrateTotes();
+  migrateTotes(); migrateLinens();
 
   ['misc','swag'].forEach(k => {
     const x = S.expenses.find(y => y.type === 'subtable' && y.subtable === k);
@@ -849,6 +849,27 @@ function deleteTrackBuy(key, i) {
 
 // ── Tote bags & supplies: same item cards as a merch option ─────────────────
 // Old tote rows (price + qty) and the old "spent so far" box carry over unchanged.
+// One-time: move the "Linens" item from Decor into Misc expenses.
+function migrateLinens() {
+  if (S.linensMoved) return;
+  S.linensMoved = true;
+  const items = S.decorItems || [];
+  const idx = items.findIndex(x => /linen/i.test(x.name || ''));
+  if (idx >= 0) {
+    const it = items[idx];
+    const row = {label: it.name, notes: it.notes || '', url: it.url || ''};
+    if (it.status === 'buy' && it.calc) {
+      const c = lineCalc(it.calc);
+      Object.assign(row, {useCalc: true, calc: it.calc, est: c.total, spent: c.spent});
+    } else { row.est = +it.est || 0; row.spent = +it.spent || 0; }
+    if (!S.misc) S.misc = [];
+    S.misc.push(row);
+    items.splice(idx, 1);
+    S.inventory = (S.inventory || []).filter(x => x.decorId !== it.id);
+  }
+  saveState();
+}
+
 function migrateTotes() {
   if (S.totesMigrated) return;
   S.totesMigrated = true;
