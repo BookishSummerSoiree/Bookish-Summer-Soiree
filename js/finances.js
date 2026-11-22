@@ -710,7 +710,7 @@ function renderMerchSection() {
           <span style="font-size:13px;font-weight:700">${fmt(total)}</span>
           <span style="font-size:11px;color:var(--purple);margin-left:6px">${fmt(perTix)}/ticket</span>
           ${spentTot>0?`<div style="font-size:11px;color:var(--green)">paid so far ${fmt(spentTot)}</div>`:''}
-          ${tc?`<div style="font-size:11px;color:${tc.still===0&&tc.needed>0?'var(--green)':'var(--text2)'}">${tc.have} / ${tc.needed} purchased</div>`:''}
+          
         </div>
       </div>
       ${isCol('mo:'+key)?'':`
