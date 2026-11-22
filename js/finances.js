@@ -80,7 +80,7 @@ function trackData(key) {
   if (!S.purchaseTrack[key]) S.purchaseTrack[key] = {needed: 180, buys: []};
   return S.purchaseTrack[key];
 }
-function buyTotal(b) { return (b && b.total !== undefined && b.total !== null && b.total !== '') ? (+b.total||0) : (+(b&&b.price)||0) * (Math.floor(+(b&&b.qty))||0); }
+function buyTotal(b) { return +(b && b.price) || 0; } // price = total paid for the purchase
 function trackCalc(key) {
   if (!trackOn(key)) return null;
   const t = (S.purchaseTrack||{})[key] || {needed: 180, buys: []};
@@ -665,6 +665,7 @@ function merchItemsHtml(key, rows, paying, sortKey) {
             <div style="font-size:13px;font-weight:600">${fmt(c.total)}</div>
             ${col&&c.spent>0?`<div style="font-size:10px;color:var(--green)">paid ${fmt(c.spent)}</div>`:''}
           </div>
+          ${trackOn(key)?`<button class="icon-btn" onclick="moveItemToBuy('${key}',${i})" title="This is a tumbler purchase — move into Tumblers purchased"><i class="ti ti-arrow-bar-up" style="font-size:14px"></i></button>`:''}
           <button class="icon-btn" onclick="openMerchLine('${key}',${i})" title="Edit"><i class="ti ti-pencil" style="font-size:14px"></i></button>
           <button class="icon-btn del-btn" onclick="confirmDelete('Delete this item?',()=>deleteMerchLine('${key}',${i}))" title="Delete"><i class="ti ti-trash" style="font-size:14px"></i></button>
         </div>
@@ -796,6 +797,17 @@ function moveBuyToItem(key, i) {
   saveState(); renderFinances();
 }
 
+function moveItemToBuy(key, i) {
+  const r = (S[key]||[])[i];
+  if (!r) return;
+  const c = lineCalc(r);
+  const qty = c.bought > 0 ? c.bought * c.perPack : (c.perPack > 1 ? c.perPack : 0);
+  trackData(key).buys.push({price: c.spent || c.total, qty: qty || 1, notes: r.label || ''});
+  S[key].splice(i, 1);
+  saveState(); renderFinances();
+  setTimeout(()=>openTrackBuy(key, trackData(key).buys.length - 1), 50);
+}
+
 function setTrackNeeded(key, val) {
   trackData(key).needed = Math.max(0, parseInt(val) || 0);
   saveState(); renderFinances();
@@ -827,8 +839,8 @@ function saveTrackBuy(key, i) {
   const qty = parseInt(document.getElementById('tb-qty')?.value) || 0;
   if (!(qty > 0)) { alert('Please enter how many.'); return; }
   const t = trackData(key);
-  const row = {total: price, price: qty ? r2(price/qty) : 0, qty, notes: document.getElementById('tb-notes')?.value?.trim() || ''};
-  if (i >= 0 && t.buys[i]) t.buys[i] = Object.assign({}, t.buys[i], row); else t.buys.push(row);
+  const row = {price, qty, notes: document.getElementById('tb-notes')?.value?.trim() || ''};
+  if (i >= 0 && t.buys[i]) { t.buys[i] = Object.assign({}, t.buys[i], row); delete t.buys[i].total; } else t.buys.push(row);
   saveState(); closeModal(); renderFinances();
 }
 
