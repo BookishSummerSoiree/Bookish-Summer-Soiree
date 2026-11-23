@@ -22,7 +22,7 @@ function r2(n) { return Math.round((+n||0)*100)/100; }
 // Older rows that only have price + qty still work (qty = how many).
 function lineCalc(l) {
   l = l || {};
-  const att     = +((S.attendance||{}).total) || 0;
+  const att     = (l.attKey === 'bedazzle') ? bedTickets() : (+((S.attendance||{}).total) || 0);
   const perPack = Math.max(1, Math.floor(+l.perPack || 1));
   const price   = +l.price || 0;
   let mode = l.needMode;
@@ -81,11 +81,13 @@ function trackData(key) {
   return S.purchaseTrack[key];
 }
 function buyTotal(b) { return +(b && b.price) || 0; } // price = total paid for the purchase
+function bedTickets() { return Math.max(0, Math.floor(+((S.bedazzle||{}).tickets)) || 0); }
+function trackLabel(key) { return key === 'bedazzle' ? 'Bedazzle kits' : ((S.merchLabels||{})[key] || key); }
 function trackCalc(key) {
   if (!trackOn(key)) return null;
   const t = (S.purchaseTrack||{})[key] || {needed: 180, buys: []};
   const buys = t.buys || [];
-  const needed = Math.max(0, Math.floor(+t.needed || 0));
+  const needed = key === 'bedazzle' ? bedTickets() : Math.max(0, Math.floor(+t.needed || 0));
   const have = buys.reduce((n,b) => n + (Math.floor(+b.qty) || 0), 0);
   const spent = r2(buys.reduce((n,b) => n + buyTotal(b), 0));
   const avg = have > 0 ? spent / have : 0;
@@ -297,6 +299,7 @@ function renderFinances() {
   ${renderTotesSection()}
   ${stEstSpent('misc','Misc expenses')}
   ${stEstSpent('swag','Swag bag')}
+  ${renderBedazzleSection()}
   `;
 }
 
@@ -574,7 +577,7 @@ function doEditExpense(i) {
 // p = unique id prefix. l = existing cost line (or undefined for a new one).
 function costFieldsHtml(p, l) {
   l = l || {};
-  const att = +((S.attendance||{}).total) || 0;
+  const att = (l.attKey === 'bedazzle') ? bedTickets() : (+((S.attendance||{}).total) || 0);
   const c   = lineCalc(l);
   const mode = (l.needMode || (l.qty!==undefined && l.qty!==null && l.qty!=='' ? 'custom' : 'attendees'));
   const customVal = (l.needQty!==undefined && l.needQty!==null && l.needQty!=='') ? l.needQty : (l.qty!==undefined && l.qty!==null && l.qty!=='' ? l.qty : att);
@@ -753,7 +756,7 @@ function trackHtml(key, rows, paying) {
   if (!tc) return '';
   const cid = 'tr:' + key;
   const col = isCol(cid);
-  const label = ((S.merchLabels||{})[key] || key);
+  const label = trackLabel(key);
   const perTix = paying > 0 ? r2(tc.projected / paying) : 0;
   const dup = rows.some(r => /tumbler/i.test(r.label||'')) && /tumbler/i.test(label);
   const tile = (lbl, val, color) => `<div style="flex:1;min-width:0;text-align:center;background:var(--bg2);border-radius:var(--radius-sm);padding:3px 4px">
@@ -806,7 +809,8 @@ function moveItemToBuy(key, i) {
 }
 
 function setTrackNeeded(key, val) {
-  trackData(key).needed = Math.max(0, parseInt(val) || 0);
+  if (key === 'bedazzle') { bedState().tickets = Math.max(0, parseInt(val) || 0); }
+  else trackData(key).needed = Math.max(0, parseInt(val) || 0);
   saveState(); renderFinances();
 }
 
@@ -814,7 +818,7 @@ function openTrackBuy(key, i) {
   const t = trackData(key);
   const b = i >= 0 ? t.buys[i] : null;
   if (i >= 0 && !b) return;
-  const label = ((S.merchLabels||{})[key] || key);
+  const label = trackLabel(key);
   showModal(`
     <h3>${b?'Edit':'Add'} purchase — ${escHtml(label)}</h3>
     <div style="display:flex;gap:8px">
@@ -917,6 +921,56 @@ function renderTotesSection() {
   </div>`;
 }
 
+
+// ── Bedazzling class: its own ticket, completely separate from the Soirée budget ──
+function bedState() { if (!S.bedazzle) S.bedazzle = {tickets: 0, price: 0}; return S.bedazzle; }
+function setBedTickets(v) { bedState().tickets = Math.max(0, parseInt(v) || 0); saveState(); renderFinances(); }
+function setBedPrice(v) { bedState().price = r2(parseMoney(v)); saveState(); renderFinances(); }
+
+function renderBedazzleSection() {
+  const b = bedState();
+  trackData('bedazzle');
+  const T = bedTickets();
+  const price = +b.price || 0;
+  const rows = S.bedItems || [];
+  const tc = trackCalc('bedazzle');
+  const costs = r2(rows.reduce((n,r) => n + lineCalc(r).total, 0) + (tc ? tc.projected : 0));
+  const spent = r2(rows.reduce((n,r) => n + lineCalc(r).spent, 0) + (tc ? tc.spent : 0));
+  const auto = T > 0 ? r2(costs / T) : 0;
+  const revenue = r2(T * price);
+  const surplus = r2(revenue - costs);
+  const cell = (lbl, inner, extra) => `<div class="att-cell" style="${extra||''}"><div class="att-lbl">${lbl}</div>${inner}</div>`;
+  const big = (v, col) => `<div style="font-size:18px;font-weight:700;text-align:center;padding:1px 0;${col?'color:'+col:''}">${v}</div>`;
+  const col = isCol('sec:bedazzle');
+  const ids = JSON.stringify(rows.map(r => 'mi:' + itemCid(r))).replace(/"/g,'&quot;');
+  return `<div class="card" id="st-bedazzle">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:2px;font-size:13px;font-weight:600">${chev('sec:bedazzle')}Bedazzling class</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:var(--text2)">own ticket, not in the Soirée budget</span>
+        <button class="icon-btn" onclick="openMerchLine('bedItems',-1)" title="Add item"><i class="ti ti-plus" style="font-size:14px"></i></button>
+      </div>
+    </div>
+    ${col?'':`
+    <div class="att-row">
+      ${cell('Tickets', numIn('bed-tix', T, 'setBedTickets(this.value)', 'width:100%;font-size:18px;font-weight:700;text-align:center'))}
+      ${cell('Ticket price', moneyIn('bed-price', price||'', 'setBedPrice(this.value)', 'width:100%;font-size:18px;font-weight:700;text-align:center'), 'background:var(--purple-bg);border:.5px solid var(--purple)')}
+      ${cell('Auto-calculated', big(fmt(auto), 'var(--purple-text)') + `<div style="font-size:9px;color:var(--text3);text-align:center">costs ÷ ${T} tickets</div>`)}
+    </div>
+    <div class="att-row" style="margin-top:6px">
+      ${cell('Surplus', big((surplus>=0?'+':'')+fmt(surplus), surplus>=0?'var(--green)':'var(--red)') + `<div style="font-size:9px;color:var(--text3);text-align:center">revenue ${fmt(revenue)} – costs ${fmt(costs)}</div>`)}
+      ${cell('Spent so far', big(fmt(spent)))}
+    </div>
+    ${trackHtml('bedazzle', [], T)}
+    <div style="display:flex;gap:6px;margin:6px 0">
+      <button class="btn" style="font-size:11px;padding:2px 8px" onclick="setAllCol(${ids},true)">Collapse items</button>
+      <button class="btn" style="font-size:11px;padding:2px 8px" onclick="setAllCol(${ids},false)">Expand items</button>
+    </div>
+    ${merchItemsHtml('bedItems', rows, T, 'bedItems')}
+    <div style="margin-top:6px"><button class="btn" style="font-size:12px" onclick="openMerchLine('bedItems',-1)"><i class="ti ti-plus"></i> Add item</button></div>`}
+  </div>`;
+}
+
 // Quick "I paid something": adds to what's already recorded as spent.
 function openPayment(key, i) {
   const r = (S[key]||[])[i];
@@ -958,12 +1012,12 @@ function openMerchLine(key, i) {
   const rows = S[key] || [];
   const r = i >= 0 ? rows[i] : null;
   if (i >= 0 && !r) return;
-  const labels = {hats:'Hats', tshirts:'T-shirts', totes:'Tote bags & supplies', ...(S.merchLabels||{})};
+  const labels = {hats:'Hats', tshirts:'T-shirts', totes:'Tote bags & supplies', bedItems:'Bedazzling class', ...(S.merchLabels||{})};
   showModal(`
     <h3>${r?'Edit':'Add'} item — ${escHtml(labels[key]||key)}</h3>
     <div class="field"><label>What is it? (e.g. Tumblers, Sublimation paper, Ink)</label>
       <input type="text" id="ml-name" value="${escHtml(r?r.label||'':'')}" placeholder="Item name"></div>
-    ${costFieldsHtml('ml', r || {})}
+    ${costFieldsHtml('ml', r || (key==='bedItems' ? {attKey:'bedazzle'} : {}))}
     <div class="field"><label>Notes (optional)</label><input type="text" id="ml-notes" value="${escHtml(r?r.notes||'':'')}"></div>
     <div class="field"><label>Link (optional)</label><input type="text" id="ml-url" value="${escHtml(r?r.url||'':'')}"></div>
     <div class="m-actions">
@@ -979,7 +1033,7 @@ function saveMerchLine(key, i) {
   if (!S[key]) S[key] = [];
   const cf = readCostFields('ml');
   const base = i >= 0 ? S[key][i] : {};
-  const line = Object.assign({}, base, cf, {
+  const line = Object.assign({}, base, cf, (key==='bedItems' ? {attKey:'bedazzle'} : {}), {
     label: name,
     notes: document.getElementById('ml-notes')?.value?.trim() || '',
     url:   document.getElementById('ml-url')?.value?.trim() || ''
