@@ -151,6 +151,19 @@ function renderSettings() {
       </div>
     </div>
 
+    <!-- EARLIER COPIES ON THIS DEVICE -->
+    <div class="card">
+      <div class="card-title">Earlier copies on this device</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Whenever HQ loads newer data from the cloud, it keeps the copy it replaced here. If your data ever looks old, restore the newest copy with the most authors, to-dos and purchases.</div>
+      ${(function(){
+        const list = previousCopies();
+        if (!list.length) return '<div style="font-size:12px;color:var(--text3)">None saved on this device.</div>';
+        return list.map(function(c){
+          return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:.5px solid var(--border)"><div style="flex:1;min-width:0;font-size:12px"><strong>'+(c.at?new Date(c.at).toLocaleString():'Unknown time')+'</strong><div style="color:var(--text3);font-size:11px">'+c.authors+' authors · '+c.todos+' to-dos · '+c.buys+' tumbler/kit purchases</div></div><button class="btn" style="font-size:11px;padding:2px 8px" onclick="restorePrevious(\''+c.key+'\')">Restore</button></div>';
+        }).join('');
+      })()}
+    </div>
+
     <!-- APP CONNECTIONS (at bottom) -->
     <div class="card">
       <div class="card-title">App connections</div>

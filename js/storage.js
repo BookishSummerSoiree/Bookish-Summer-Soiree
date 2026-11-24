@@ -173,9 +173,52 @@ function migrateState() {
 let _hadLocal   = false;   // did this browser already hold HQ data at startup?
 let _cloudReady = false;   // have we compared against the cloud copy yet?
 let _cloudBusy  = false;
-const SK_PREV = SK + '_previous';   // safety copy of whatever was replaced
+const SK_PREV = SK + '_previous';   // older single safety copy (kept; moved into the list below)
+const PREV_IDX = SK + '_prev_index';
+const SK_SYNCED = 'soiree_hq_synced_at';   // stamp of the cloud copy this browser last loaded or pushed
+function _getSynced() { return +localStorage.getItem(SK_SYNCED) || 0; }
+function _setSynced(n) { try { localStorage.setItem(SK_SYNCED, String(n)); } catch(e) {} }
+function _prevList() { try { return JSON.parse(localStorage.getItem(PREV_IDX) || '[]'); } catch(e) { return []; } }
+// Every copy HQ replaces is kept (up to 10), never overwritten by the next one.
+function preservePrevious(raw) {
+  if (!raw) return;
+  let d; try { d = JSON.parse(raw); } catch(e) { return; }
+  if (!d || !Array.isArray(d.authors)) return;
+  const at = d._savedAt || 0, list = _prevList();
+  if (list.some(x => x.at === at && x.len === raw.length)) return;
+  const key = SK + '_prev_' + Date.now() + '_' + list.length;
+  try { localStorage.setItem(key, raw); } catch(e) { return; }
+  list.push({key, at, len: raw.length});
+  while (list.length > 10) { const o = list.shift(); try { localStorage.removeItem(o.key); } catch(e) {} }
+  try { localStorage.setItem(PREV_IDX, JSON.stringify(list)); } catch(e) {}
+}
+function previousCopies() {
+  return _prevList().map(x => {
+    let d = null; try { d = JSON.parse(localStorage.getItem(x.key)); } catch(e) {}
+    if (!d) return null;
+    const buys = Object.values(d.purchaseTrack || {}).reduce((n,t) => n + ((t && t.buys) || []).length, 0);
+    return {key: x.key, at: d._savedAt || 0, authors: (d.authors||[]).length, todos: (d.todos||[]).length, buys};
+  }).filter(Boolean).sort((a,b) => b.at - a.at);
+}
+function restorePrevious(key) {
+  let d; try { d = JSON.parse(localStorage.getItem(key)); } catch(e) {}
+  if (!d || !Array.isArray(d.authors)) { showToast('That copy could not be read', 'error'); return; }
+  const when = d._savedAt ? new Date(d._savedAt).toLocaleString() : 'unknown time';
+  if (!confirm('Restore the copy saved ' + when + '?\n\n' + d.authors.length + ' authors, ' + (d.todos||[]).length +
+    ' to-dos.\n\nWhat is in HQ right now is kept as an earlier copy. This also becomes the copy every device loads.')) return;
+  preservePrevious(localStorage.getItem(SK));
+  S = d; migrateState();
+  S._savedAt = Date.now();
+  _hadLocal = true;
+  try { localStorage.setItem(SK, JSON.stringify(S)); } catch(e) {}
+  _cloudReady = true;
+  syncHQToFirebase();
+  showTab(_activeTab);
+  showToast('Restored — ' + S.authors.length + ' authors');
+}
 
 function loadState() {
+  try { preservePrevious(localStorage.getItem(SK_PREV)); } catch(e) {}
   try {
     const raw = localStorage.getItem(SK);
     _hadLocal = !!raw;
@@ -207,8 +250,9 @@ function saveState() {
 }
 
 function adoptState(data, keepPrevious) {
-  if (keepPrevious) { try { const old = localStorage.getItem(SK); if (old) localStorage.setItem(SK_PREV, old); } catch(e) {} }
+  if (keepPrevious) { try { preservePrevious(localStorage.getItem(SK)); } catch(e) {} }
   S = data;
+  if (data && data._savedAt) _setSynced(data._savedAt);
   migrateState();
   _hadLocal = true;
   try { localStorage.setItem(SK, JSON.stringify(S)); } catch(e) {}
@@ -221,8 +265,10 @@ function loadFromCloud() {
     .then(r => { if (!r.ok) throw new Error('read failed'); return r.json(); })
     .then(remote => {
       const remoteAt = (remote && remote._savedAt) || 0;
-      const localAt  = (_hadLocal && S._savedAt) || 0;
-      if (remote && Array.isArray(remote.authors) && (!_hadLocal || remoteAt > localAt)) {
+      // The cloud copy wins whenever it changed since this browser last synced with it. Comparing
+      // against the last-synced stamp (not "now") means a browser holding old data can never
+      // overwrite newer cloud data just because it saved something on startup.
+      if (remote && Array.isArray(remote.authors) && (!_hadLocal || remoteAt > _getSynced())) {
         adoptState(remote, _hadLocal);
         _cloudReady = true;
         if (typeof showTab === 'function' && document.getElementById('root').innerHTML) showTab(_activeTab);
@@ -252,7 +298,10 @@ function syncHQToFirebase() {
   (S.authors||[]).forEach(a => { authObj[a.id] = a; });
   push('/authors', authObj);
   push('/wishlist', S.wishlist||[]);
-  push('/hq/state', S);
+  const stamp = S._savedAt || 0;
+  fetch(window.FIREBASE_DB_URL + '/hq/state.json', {
+    method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(S)
+  }).then(r => { if (r.ok && stamp) _setSynced(stamp); }).catch(()=>{});
 }
 
 // ── Backup file: export / import ──────────────────────────────────────────────
